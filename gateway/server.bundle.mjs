@@ -32196,7 +32196,7 @@ var StreamableHTTPServerTransport = class {
 };
 
 // gateway/server.mjs
-var VERSION = "1.6.1";
+var VERSION = "1.6.2";
 var CONFIG_PATH = process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) {
   console.error("AIWG_CONFIG is required");

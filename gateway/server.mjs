@@ -9,7 +9,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 
-const VERSION = '1.6.1';
+const VERSION = '1.6.2';
 const CONFIG_PATH = process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) { console.error('AIWG_CONFIG is required'); process.exit(1); }
 const CONFIG_DIR = path.dirname(CONFIG_PATH);

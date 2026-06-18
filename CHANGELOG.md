@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.2
+
+- Added the DevMate extension icon with a white background.
+
 ## 1.6.1
 
 - Added MCP tool output schemas and read/write/destructive/open-world annotations for better ChatGPT App planning.
