@@ -1,0 +1,211 @@
+{
+  "name": "devmate",
+  "displayName": "DevMate",
+  "description": "Personal open-source VS Code extension for ChatGPT MCP development: one-click local gateway, workspace editing, commands, Git workflow, and readonly reference projects.",
+  "version": "1.6.1",
+  "publisher": "local-ai",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:devMate.start",
+    "onCommand:devMate.open",
+    "onCommand:devMate.stop",
+    "onCommand:devMate.restart",
+    "onCommand:devMate.copyUrl",
+    "onCommand:devMate.addReference",
+    "onCommand:devMate.clearReferences",
+    "onCommand:devMate.doctor",
+    "onCommand:devMate.logs",
+    "onCommand:devMate.exportSource",
+    "onCommand:devMate.setup",
+    "onCommand:devMate.copyPrompt",
+    "onCommand:devMate.openSettings",
+    "onCommand:devMate.quickStart",
+    "onCommand:devMate.oneClick",
+    "onCommand:devMate.openPanel",
+    "onCommand:devMate.openControlCenter",
+    "onCommand:devMate.copyMcpUrl",
+    "onCommand:devMate.copyStarterPrompt",
+    "onCommand:devMate.addReferenceWorkspace",
+    "onCommand:devMate.showLogs",
+    "onCommand:aiWorkspaceGateway.quickStart",
+    "onCommand:aiWorkspaceGateway.openPanel",
+    "onCommand:localAiGateway.quickStart"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "DevMate",
+      "properties": {
+        "devMate.port": {
+          "type": "number",
+          "default": 8787,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "Local gateway port. Auto-increments if busy."
+        },
+        "devMate.ngrokCommandPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to ngrok executable."
+        },
+        "devMate.autoUseCurrentWorkspace": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use current VS Code folder as active writable workspace on quick start."
+        },
+        "devMate.defaultCommandTimeoutMs": {
+          "type": "number",
+          "default": 180000,
+          "minimum": 1000,
+          "maximum": 1800000,
+          "description": "Default timeout for command and git tools."
+        },
+        "devMate.maxOutputChars": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 1000,
+          "maximum": 500000,
+          "description": "Default max returned output characters."
+        },
+        "devMate.autoCopyUrl": {
+          "type": "boolean",
+          "default": true,
+          "description": "Copy verified ChatGPT MCP URL automatically after Start."
+        },
+        "devMate.defaultStartCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Optional command to run after gateway is ready, e.g. pnpm install or pnpm dev. Empty disables."
+        },
+        "devMate.permissionProfile": {
+          "type": "string",
+          "enum": [
+            "readOnly",
+            "balanced",
+            "fullAccess"
+          ],
+          "default": "fullAccess",
+          "description": "Permission profile for MCP tools. readOnly blocks writes/commands/Git mutations; balanced supports normal development with dangerous guards; fullAccess allows advanced local operations."
+        },
+        "devMate.blockDangerousOperations": {
+          "type": "boolean",
+          "default": false,
+          "description": "Block high-risk shell and Git operations such as recursive force deletion, hard reset, git clean, and force push. Usually false with fullAccess."
+        },
+        "devMate.confirmBeforePush": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, block MCP push requests and require the user to disable this setting deliberately before pushing."
+        },
+        "devMate.publicHealthDetails": {
+          "type": "boolean",
+          "default": false,
+          "description": "Expose detailed /health information over ngrok. Default false keeps public health minimal."
+        },
+        "devMate.requireAuthToken": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require a per-install secret token for public MCP requests. The copied MCP URL includes the token."
+        },
+        "devMate.allowDirectoryMutations": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow MCP tools to delete or move directories. File edits remain available when this is false."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "devMate.start",
+        "title": "DevMate: Start"
+      },
+      {
+        "command": "devMate.open",
+        "title": "DevMate: Open"
+      },
+      {
+        "command": "devMate.stop",
+        "title": "DevMate: Stop"
+      },
+      {
+        "command": "devMate.restart",
+        "title": "DevMate: Restart"
+      },
+      {
+        "command": "devMate.copyUrl",
+        "title": "DevMate: Copy URL"
+      },
+      {
+        "command": "devMate.addReference",
+        "title": "DevMate: Add Reference Project"
+      },
+      {
+        "command": "devMate.clearReferences",
+        "title": "DevMate: Clear Reference Projects"
+      },
+      {
+        "command": "devMate.doctor",
+        "title": "DevMate: Doctor"
+      },
+      {
+        "command": "devMate.logs",
+        "title": "DevMate: Logs"
+      },
+      {
+        "command": "devMate.exportSource",
+        "title": "DevMate: Export Source"
+      },
+      {
+        "command": "devMate.setup",
+        "title": "DevMate: Setup / Doctor"
+      },
+      {
+        "command": "devMate.copyPrompt",
+        "title": "DevMate: Copy Simple Prompt"
+      },
+      {
+        "command": "devMate.openSettings",
+        "title": "DevMate: Open Settings"
+      }
+    ]
+  },
+  "license": "MIT",
+  "scripts": {
+    "build": "esbuild gateway/server.mjs --bundle --platform=node --format=esm --target=node18 --outfile=gateway/server.bundle.mjs",
+    "check": "node --check extension.js && node --check gateway/server.mjs && node --check tests/smoke-gateway.mjs",
+    "smoke:gateway": "npm run build && node tests/smoke-gateway.mjs",
+    "package:vsix": "npm run build && vsce package"
+  },
+  "keywords": [
+    "mcp",
+    "chatgpt",
+    "ai",
+    "workspace",
+    "git",
+    "developer-tools",
+    "vscode"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kukutx/devmate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Kukutx/devmate/issues"
+  },
+  "homepage": "https://github.com/Kukutx/devmate#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.1"
+  }
+}

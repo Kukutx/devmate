@@ -1,0 +1,13 @@
+.git/**
+.gitignore
+.npmignore
+.vscode/**
+node_modules/**
+tmp/**
+tests/**
+*.vsix
+*.tgz
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
