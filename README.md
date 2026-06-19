@@ -17,6 +17,7 @@ Core abilities:
 - Use Git: status, diff, add, commit, push, pull, branch, switch, log, blame, stash.
 - Add readonly reference projects.
 - Review current changes with bounded Git summaries.
+- Show a ChatGPT Apps status panel for connection, VS Code context, diagnostics, and permissions.
 - Keep automatic backups and audit logs in VS Code global storage, not in your project.
 - Automatically prune old backups and audit logs so long-running local use stays bounded.
 
@@ -30,6 +31,7 @@ Safety defaults:
 - Directory delete/move operations are blocked unless `devMate.allowDirectoryMutations` is enabled.
 - Set `devMate.confirmBeforePush` to block MCP push requests until you deliberately disable it.
 - Backups and audit logs default to 30-day retention with size caps; tune `devMate.backupRetentionDays`, `devMate.auditRetentionDays`, `devMate.maxBackupBytes`, and `devMate.maxAuditBytes` if needed.
+- The ChatGPT Apps status panel displays a redacted connection snapshot only. It does not store or show the full token URL.
 
 Runtime requirement: `ngrok` must be installed and authenticated so ChatGPT can reach your local MCP endpoint over HTTPS.
 

@@ -32404,7 +32404,7 @@ async function pruneState(paths, options = {}, nowMs = Date.now()) {
 }
 
 // gateway/server.mjs
-var VERSION = "1.8.0";
+var VERSION = "1.9.0";
 var CONFIG_PATH = process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) {
   console.error("AIWG_CONFIG is required");
@@ -32419,6 +32419,8 @@ var DEFAULT_MAX_OUTPUT = 12e4;
 var DEFAULT_TIMEOUT_MS = 18e4;
 var MAX_DIRECTORY_MUTATION_ENTRIES = 2e4;
 var PUBLIC_HEALTH_DETAILS = process.env.DEVMATE_PUBLIC_HEALTH_DETAILS === "1";
+var STATUS_UI_URI = "ui://devmate/status.html";
+var APP_RESOURCE_MIME = "text/html;profile=mcp-app";
 var writeLocks = /* @__PURE__ */ new Set();
 var HIDDEN_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", ".next", ".dart_tool", ".firebase", "build", "dist", "coverage", "bin", "obj", ".venv", "venv", "secrets", "secret", "credentials", "credential", "private-key", "private_keys", "service-account", "service_accounts"]);
 var BLOCKED_EXT = /* @__PURE__ */ new Set([".pem", ".key", ".pfx", ".p12", ".db", ".sqlite", ".sqlite3", ".log"]);
@@ -32440,6 +32442,7 @@ function loadConfig() {
   c.runtime.defaultCommandTimeoutMs ||= DEFAULT_TIMEOUT_MS;
   c.runtime.maxOutputChars ||= DEFAULT_MAX_OUTPUT;
   c.maintenance = maintenanceOptions(c.maintenance || DEFAULT_MAINTENANCE);
+  c.connection ||= {};
   c.workspaces ||= [];
   c.commands ||= [];
   return c;
@@ -32613,7 +32616,9 @@ var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
   "task_report",
   "list_backups",
   "read_audit_log",
-  "maintenance_status"
+  "maintenance_status",
+  "connection_diagnostics",
+  "devmate_status_panel"
 ]);
 var DESTRUCTIVE_TOOLS = /* @__PURE__ */ new Set([
   "rollback_task",
@@ -33091,11 +33096,208 @@ async function rollbackEntry(cfg, entry, dryRun = false) {
   }
   return { action: entry.action, skipped: true, reason: "no safe automatic rollback for this action" };
 }
+function secondsSinceIso(value) {
+  if (!value) return null;
+  const t = Date.parse(value);
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.round((Date.now() - t) / 1e3));
+}
+function diagnosticSummary(items = []) {
+  const bySeverity = { error: 0, warning: 0, information: 0, hint: 0 };
+  for (const item of items) {
+    const key = bySeverity[item.severity] == null ? "information" : item.severity;
+    bySeverity[key]++;
+  }
+  return { total: items.length, bySeverity };
+}
+async function connectionDiagnosticsData() {
+  const cfg = loadConfig();
+  const aw = activeWorkspace(cfg);
+  const ctx = cfg.vscodeContext || {};
+  const contextAgeSeconds = secondsSinceIso(ctx.capturedAt);
+  const contextFresh = contextAgeSeconds != null && contextAgeSeconds <= 300;
+  const connection = cfg.connection || {};
+  const advice = [];
+  if (!aw) advice.push("Open a VS Code project folder and run DevMate: Start.");
+  if (!ctx.capturedAt) advice.push("No VS Code context snapshot is available yet. Focus VS Code or restart DevMate.");
+  else if (!contextFresh) advice.push("VS Code context looks stale. Focus VS Code or run DevMate: Start again.");
+  if (!connection.lastPreflightAt) advice.push("No public MCP preflight has been recorded. Run DevMate: Start and paste the verified URL into ChatGPT.");
+  if (connection.lastError) advice.push("The last DevMate preflight recorded an error. Run DevMate: Doctor in VS Code.");
+  return {
+    name: "devmate",
+    version: VERSION,
+    checkedAt: now(),
+    status: advice.length ? "attention" : "ready",
+    gateway: {
+      reachable: true,
+      reason: "This MCP tool call reached the DevMate gateway.",
+      mcpPath: "/mcp",
+      localPort: cfg.server?.port || 8787,
+      authRequired: cfg.auth?.required !== false,
+      permissionProfile: permissionProfile(cfg),
+      blockDangerousOperations: dangerousGuardEnabled(cfg)
+    },
+    vscode: {
+      contextPresent: !!ctx.capturedAt,
+      capturedAt: ctx.capturedAt || null,
+      contextAgeSeconds,
+      fresh: contextFresh,
+      activeEditor: ctx.activeEditor ? {
+        path: ctx.activeEditor.path,
+        languageId: ctx.activeEditor.languageId,
+        lineCount: ctx.activeEditor.lineCount,
+        isDirty: !!ctx.activeEditor.isDirty
+      } : null,
+      visibleEditorCount: Array.isArray(ctx.visibleEditors) ? ctx.visibleEditors.length : 0,
+      diagnostics: diagnosticSummary(ctx.diagnostics || [])
+    },
+    workspace: {
+      active: aw ? wsPublic(aw) : null,
+      count: cfg.workspaces.length,
+      references: cfg.workspaces.filter((w) => w.reference).length
+    },
+    connection: {
+      lastPreflightAt: connection.lastPreflightAt || null,
+      lastPreflightAgeSeconds: secondsSinceIso(connection.lastPreflightAt),
+      lastCopiedAt: connection.lastCopiedAt || null,
+      lastPublicHost: connection.lastPublicHost || "",
+      lastMcpPath: connection.lastMcpPath || "/mcp",
+      lastToolCount: connection.lastToolCount || null,
+      lastServerName: connection.lastServerName || "",
+      lastError: connection.lastError ? redactSensitiveString(connection.lastError) : "",
+      lastErrorAt: connection.lastErrorAt || null
+    },
+    maintenance: await stateSummary({ backupRoot: BACKUP_ROOT, auditLog: AUDIT_LOG }),
+    advice
+  };
+}
+function statusPanelHtml() {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root{color-scheme:light dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    body{margin:0;padding:14px;background:Canvas;color:CanvasText}
+    .wrap{max-width:760px;margin:0 auto}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+    h1{font-size:18px;line-height:1.2;margin:0;font-weight:650}
+    button{font:inherit;border:1px solid color-mix(in srgb, CanvasText 22%, transparent);background:ButtonFace;color:ButtonText;border-radius:6px;padding:6px 10px;cursor:pointer}
+    .status{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:4px 9px;font-size:12px;border:1px solid color-mix(in srgb, CanvasText 16%, transparent)}
+    .dot{width:8px;height:8px;border-radius:50%;background:#888}
+    .ready .dot{background:#1a7f37}.attention .dot{background:#b54708}.loading .dot{background:#666}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+    .card{border:1px solid color-mix(in srgb, CanvasText 14%, transparent);border-radius:8px;padding:10px;background:color-mix(in srgb, Canvas 94%, CanvasText 6%)}
+    .label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.72;margin-bottom:4px}
+    .value{font-size:14px;font-weight:600;overflow-wrap:anywhere}
+    .muted{font-size:12px;opacity:.74;margin-top:4px;overflow-wrap:anywhere}
+    .advice{margin-top:10px;border-left:3px solid #b54708;padding-left:10px}
+    ul{margin:6px 0 0;padding-left:18px}
+    li{margin:4px 0}
+    pre{white-space:pre-wrap;word-break:break-word;font-size:12px;margin:8px 0 0;opacity:.78}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <h1>DevMate Connection</h1>
+        <div class="muted" id="updated">Waiting for diagnostics</div>
+      </div>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+    <div id="root" class="status loading"><span class="dot"></span><span>Loading DevMate status</span></div>
+  </div>
+  <script>
+  (() => {
+    const root = document.getElementById('root');
+    const updated = document.getElementById('updated');
+    const refresh = document.getElementById('refresh');
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    const fmtAge = seconds => seconds == null ? 'unknown' : seconds < 60 ? seconds + 's ago' : Math.round(seconds / 60) + 'm ago';
+    function unwrap(value) {
+      if (!value) return null;
+      if (value.structuredContent) return value.structuredContent;
+      if (value.result?.structuredContent) return value.result.structuredContent;
+      if (value.params?.result?.structuredContent) return value.params.result.structuredContent;
+      if (value.content?.[0]?.text) {
+        try { return JSON.parse(value.content[0].text); } catch {}
+      }
+      if (value.result?.content?.[0]?.text) {
+        try { return JSON.parse(value.result.content[0].text); } catch {}
+      }
+      return value.gateway && value.vscode ? value : null;
+    }
+    function card(label, value, detail) {
+      return '<div class="card"><div class="label">' + esc(label) + '</div><div class="value">' + esc(value) + '</div><div class="muted">' + esc(detail) + '</div></div>';
+    }
+    function render(data) {
+      if (!data || !data.gateway) {
+        root.className = 'status loading';
+        root.innerHTML = '<span class="dot"></span><span>Ask ChatGPT to run devmate_status_panel.</span>';
+        return;
+      }
+      const cls = data.status === 'ready' ? 'ready' : 'attention';
+      updated.textContent = 'Checked ' + (data.checkedAt || 'now');
+      const diag = data.vscode?.diagnostics || { total: 0, bySeverity: {} };
+      const advice = Array.isArray(data.advice) && data.advice.length
+        ? '<div class="advice"><strong>Recommended actions</strong><ul>' + data.advice.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>'
+        : '';
+      root.className = '';
+      root.innerHTML =
+        '<div class="status ' + cls + '"><span class="dot"></span><span>' + esc(data.status || 'unknown') + '</span></div>' +
+        '<div class="grid" style="margin-top:10px">' +
+          card('Gateway', data.gateway?.reachable ? 'Reachable' : 'Unknown', 'Port ' + esc(data.gateway?.localPort) + ' ' + esc(data.gateway?.mcpPath)) +
+          card('VS Code', data.vscode?.fresh ? 'Fresh context' : 'Check context', 'Captured ' + esc(fmtAge(data.vscode?.contextAgeSeconds))) +
+          card('Workspace', data.workspace?.active?.root || 'None', (data.workspace?.count || 0) + ' workspace(s), ' + (data.workspace?.references || 0) + ' reference(s)') +
+          card('Permissions', data.gateway?.permissionProfile || 'unknown', data.gateway?.authRequired ? 'token required' : 'auth disabled') +
+          card('Diagnostics', String(diag.total || 0), 'errors ' + (diag.bySeverity?.error || 0) + ', warnings ' + (diag.bySeverity?.warning || 0)) +
+          card('Last Preflight', data.connection?.lastPreflightAt ? fmtAge(data.connection?.lastPreflightAgeSeconds) : 'Not recorded', data.connection?.lastPublicHost || 'no public host snapshot') +
+        '</div>' +
+        advice +
+        '<pre>' + esc(data.connection?.lastError || '') + '</pre>';
+    }
+    refresh.addEventListener('click', async () => {
+      try {
+        if (window.openai?.callTool) {
+          render(unwrap(await window.openai.callTool('connection_diagnostics', {})));
+        } else {
+          render(null);
+        }
+      } catch (error) {
+        root.className = 'status attention';
+        root.innerHTML = '<span class="dot"></span><span>' + esc(error?.message || error) + '</span>';
+      }
+    });
+    render(unwrap(window.openai?.toolOutput) || unwrap(window.openai?.toolResult));
+    window.addEventListener('message', event => {
+      const data = unwrap(event.data);
+      if (data?.gateway && data?.vscode) render(data);
+    });
+  })();
+  </script>
+</body>
+</html>`;
+}
 function createServer() {
   const server = new McpServer({ name: "devmate", version: VERSION }, { instructions: "DevMate is a personal local development gateway. It supports reading, editing, running commands, and full Git workflows according to the user's request. Keep responses practical and avoid exposing secrets; reference workspaces are read-only." });
   const registerTool = server.registerTool.bind(server);
   server.registerTool = (name, config3, handler) => registerTool(name, toolConfig(name, config3), handler);
   const S = (shape) => shape;
+  server.registerResource("devmate-status-ui", STATUS_UI_URI, { title: "DevMate status panel", description: "ChatGPT Apps UI for DevMate connection and VS Code diagnostics.", mimeType: APP_RESOURCE_MIME }, async (uri) => ({
+    contents: [{
+      uri: uri.href,
+      mimeType: APP_RESOURCE_MIME,
+      text: statusPanelHtml(),
+      _meta: {
+        ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } },
+        "openai/widgetDescription": "Shows DevMate connection status, VS Code context freshness, diagnostics, permissions, and last public MCP preflight.",
+        "openai/widgetPrefersBorder": true,
+        "openai/widgetCSP": { connect_domains: [], resource_domains: [] }
+      }
+    }]
+  }));
   server.registerTool("gateway_status", { title: "Gateway status", description: "Show gateway runtime and active workspace.", inputSchema: {} }, async () => {
     const cfg = loadConfig();
     const aw = activeWorkspace(cfg);
@@ -33111,6 +33313,11 @@ function createServer() {
   server.registerTool("maintenance_status", { title: "Maintenance status", description: "Show backup/audit retention settings and current local state size.", inputSchema: {} }, async () => {
     const cfg = loadConfig();
     return toolText({ retention: cfg.maintenance, storage: await stateSummary({ backupRoot: BACKUP_ROOT, auditLog: AUDIT_LOG }) });
+  });
+  server.registerTool("connection_diagnostics", { title: "Connection diagnostics", description: "Use this to check whether ChatGPT is currently connected to DevMate, whether VS Code context is fresh, and what may need fixing after switching models or reconnecting.", inputSchema: {}, _meta: { ui: { visibility: ["model", "app"] }, "openai/widgetAccessible": true } }, async () => toolText(await connectionDiagnosticsData()));
+  server.registerTool("devmate_status_panel", { title: "Show DevMate status panel", description: "Use this to render a ChatGPT Apps panel showing DevMate connection, VS Code context, diagnostics, permissions, and last public preflight status.", inputSchema: {}, _meta: { ui: { resourceUri: STATUS_UI_URI, visibility: ["model", "app"] }, "openai/outputTemplate": STATUS_UI_URI, "openai/widgetAccessible": true, "openai/toolInvocation/invoking": "Checking DevMate", "openai/toolInvocation/invoked": "DevMate status ready" } }, async () => {
+    const diagnostics = await connectionDiagnosticsData();
+    return { content: [{ type: "text", text: `DevMate status: ${diagnostics.status}. VS Code context ${diagnostics.vscode.fresh ? "fresh" : "needs attention"}.` }], structuredContent: diagnostics, _meta: { diagnostics } };
   });
   server.registerTool("start_task", { title: "Start task session", description: "Start a task session so subsequent writes, commands, and Git mutations share a rollback/report taskId.", inputSchema: { title: external_exports.string().optional() } }, async ({ title = "" }) => {
     const cfg = loadConfig();

@@ -30,5 +30,7 @@ Manual acceptance:
 16. Confirm invalid regex input to `search_text` returns a tool error.
 17. Confirm `read_audit_log` redacts token-like values recorded by command audit entries.
 18. Run `maintenance_status` and confirm backup/audit retention settings are present.
+19. Run `connection_diagnostics` and confirm it reports gateway reachability, VS Code context freshness, diagnostics, and last public preflight.
+20. Run `devmate_status_panel` in ChatGPT and confirm the Apps UI card renders without exposing the token URL.
 
 Known external dependency: ngrok must be installed and authenticated.

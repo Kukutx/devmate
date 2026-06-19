@@ -7,6 +7,8 @@ DevMate exposes development tools over MCP after `DevMate: Start` verifies the p
 - `gateway_status`
 - `gateway_self_test`
 - `maintenance_status`
+- `connection_diagnostics`
+- `devmate_status_panel`
 - `start_task`
 - `finish_task`
 - `task_status`
@@ -23,6 +25,7 @@ DevMate exposes development tools over MCP after `DevMate: Start` verifies the p
 
 `project_snapshot` includes root project instructions by default. `project_instructions` reads root `AGENTS.md` / `CLAUDE.md` and lists nested instruction files so ChatGPT can follow project-specific rules.
 `maintenance_status` reports local backup/audit retention settings and current storage size.
+`connection_diagnostics` returns a text/JSON health snapshot for ChatGPT-to-DevMate reachability, VS Code context freshness, diagnostics, workspace state, and recent public preflight. `devmate_status_panel` renders the same status as a lightweight ChatGPT Apps UI component.
 
 ## File Operations
 

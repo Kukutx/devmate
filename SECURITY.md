@@ -17,6 +17,7 @@ DevMate is a local development gateway. It can read, edit, run commands, and use
 - Git push can be blocked with `devMate.confirmBeforePush`.
 - Audit entries redact common token, password, authorization, and API key patterns before they are written or returned.
 - Local backups and audit logs are pruned by retention days and size caps to reduce long-term data accumulation.
+- The ChatGPT Apps status panel uses a redacted connection snapshot and does not store or render the full tokenized MCP URL.
 
 ## Reporting Issues
 

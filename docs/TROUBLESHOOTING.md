@@ -34,6 +34,16 @@ The connector URL is missing the token, contains `token=redacted`, or was copied
 
 The tunnel URL is stale, ngrok is not ready, or the `/mcp` path was removed. Run `DevMate: Start` again and use the newly verified URL.
 
+## Model Switch Looks Disconnected
+
+Switching models or reasoning modes can leave the current chat without the connector selected, or can force ChatGPT to rediscover tools. This is separate from the local gateway being down.
+
+1. Ask ChatGPT to run `devmate_status_panel`.
+2. If the panel renders, ChatGPT can still reach DevMate; check the panel advice and continue.
+3. If no tools are available, add the DevMate connector again from the `+` menu in the chat.
+4. If tools are available but the panel reports stale preflight, run `DevMate: Copy URL` or `DevMate: Start` in VS Code.
+5. If the ngrok host changed, recreate or update the ChatGPT connector with the newly copied full token URL.
+
 ## Wrong Workspace
 
 DevMate uses the active VS Code folder as the writable workspace by default. Open the intended folder in VS Code, then run `DevMate: Start` again. Use `list_workspaces` or `gateway_status` from ChatGPT to verify the active workspace.

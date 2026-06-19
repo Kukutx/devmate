@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.0
+
+- Added `connection_diagnostics` for checking ChatGPT-to-DevMate reachability, VS Code context freshness, workspace state, diagnostics, permissions, and recent public MCP preflight snapshots.
+- Added `devmate_status_panel`, a lightweight ChatGPT Apps UI panel backed by an inline MCP resource.
+- Persisted a redacted VS Code-side connection snapshot after successful or failed public MCP preflight checks.
+- Added smoke coverage for MCP Apps resource registration and status UI rendering.
+
 ## 1.8.0
 
 - Added automatic backup and audit log retention for long-running local development use.

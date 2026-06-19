@@ -15,6 +15,10 @@ The current VS Code folder is the default writable workspace. Reference projects
 
 VS Code editor context is captured by `extension.js` into `config.json` as a lightweight snapshot. The gateway reads that snapshot through MCP tools; it does not call VS Code APIs directly.
 
+Successful and failed public MCP preflight checks are recorded as a redacted connection snapshot in `config.json`. The snapshot stores host, tool count, timestamps, and errors, but not the full token URL.
+
+`devmate_status_panel` uses an inline MCP Apps HTML resource (`ui://devmate/status.html`) to render connection diagnostics inside ChatGPT. The panel has no external assets and uses MCP tool calls for refresh when the host supports widget tool access.
+
 Security model:
 
 - The HTTP server listens on `127.0.0.1` only.
@@ -24,5 +28,6 @@ Security model:
 - Directory delete/move requires `devMate.allowDirectoryMutations`, refuses protected descendants, and rejects recursive paths whose real path leaves the workspace.
 - Audit logs are stored locally and redact common token, password, authorization, and API key patterns.
 - The gateway prunes old backups and audit entries on startup using the configured retention days and size caps.
+- ChatGPT Apps UI resources are diagnostic-only and do not expose the full MCP token URL.
 - `fullAccess` is the default for single-user local development; `balanced` blocks obvious destructive commands and Git operations; `readOnly` blocks mutation tools.
 - Task sessions add task IDs to audit entries and can roll back file changes using backups.

@@ -7,7 +7,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
-const VERSION = '1.8.0';
+const VERSION = '1.9.0';
 const BASE_PORT = 8787;
 const MCP_PATH = '/mcp';
 let gatewayProcess = null;
@@ -121,6 +121,17 @@ function redactUrl(url){
     return String(url || '').replace(/([?&]token=)[^&\s]+/g,'$1redacted');
   }
 }
+function publicHost(url){
+  try { return new URL(url).host; } catch { return ''; }
+}
+function updateConnectionSnapshot(ctx, patch){
+  if(!ctx) return;
+  const data = ensureConfig(ctx,false);
+  const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  data.connection = { ...(data.connection || {}), ...cleanPatch };
+  writeJson(configPath(ctx), data);
+  refreshPanel();
+}
 function mcpUrlFor(baseUrl, ctx){
   const data = ctx ? ensureConfig(ctx,false) : null;
   const u = new URL(`${String(baseUrl).replace(/\/$/,'')}${MCP_PATH}`);
@@ -131,12 +142,13 @@ function mcpUrlFor(baseUrl, ctx){
 function defaultConfig(ctx){
   const root = currentRoot();
   return {
-    version: 6,
+    version: 7,
     appVersion: VERSION,
     instanceId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`,
     server: { port: configuredPort(), mcpPath: MCP_PATH },
     runtime: { defaultCommandTimeoutMs: Number(cfg().get('defaultCommandTimeoutMs') || 180000), maxOutputChars: Number(cfg().get('maxOutputChars') || 120000) },
     maintenance: maintenanceConfig(),
+    connection: {},
     vscodeContext: collectVsCodeContext(),
     auth: { required: authRequired(), token: newAuthToken() },
     permissions: {
@@ -159,7 +171,7 @@ function defaultConfig(ctx){
 function ensureConfig(ctx, forceCurrent=false, portOverride=null){
   const p = configPath(ctx);
   let data = readJson(p) || defaultConfig(ctx);
-  data.version = 6;
+  data.version = 7;
   data.appVersion = VERSION;
   data.instanceId ||= `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
   data.server ||= {};
@@ -169,6 +181,7 @@ function ensureConfig(ctx, forceCurrent=false, portOverride=null){
   data.runtime.defaultCommandTimeoutMs = Number(cfg().get('defaultCommandTimeoutMs') || 180000);
   data.runtime.maxOutputChars = Number(cfg().get('maxOutputChars') || 120000);
   data.maintenance = maintenanceConfig();
+  data.connection ||= {};
   data.vscodeContext = collectVsCodeContext();
   data.auth ||= {};
   data.auth.required = authRequired();
@@ -381,12 +394,23 @@ async function quickStart(ctx){
     const publicUrl = await startNgrok(ctx);
     log('Running public MCP preflight through ngrok before copying URL...');
     const test = await mcpHandshakeTest(publicUrl, ctx);
+    const stamp = new Date().toISOString();
     if(cfg().get('autoCopyUrl')) await vscode.env.clipboard.writeText(test.mcp);
+    updateConnectionSnapshot(ctx, {
+      lastPreflightAt: stamp,
+      lastCopiedAt: cfg().get('autoCopyUrl') ? stamp : undefined,
+      lastPublicHost: publicHost(publicUrl),
+      lastMcpPath: MCP_PATH,
+      lastToolCount: test.toolCount,
+      lastServerName: test.server?.name || 'devmate',
+      lastError: '',
+      lastErrorAt: null
+    });
     setStatus('DevMate: ready');
     log(`Public MCP preflight OK: ${redactUrl(test.mcp)}, tools=${test.toolCount}`);
     vscode.window.showInformationMessage(cfg().get('autoCopyUrl') ? `Ready. ChatGPT MCP URL copied and verified: ${redactUrl(test.mcp)}` : `Ready. Verified MCP URL: ${redactUrl(test.mcp)}`);
     refreshPanel();
-  }catch(e){ log(`ERROR: ${e.stack || e.message || e}`); vscode.window.showErrorMessage(`DevMate failed: ${e.message || e}`); }
+  }catch(e){ updateConnectionSnapshot(ctx,{lastError:String(e.message || e),lastErrorAt:new Date().toISOString()}); log(`ERROR: ${e.stack || e.message || e}`); vscode.window.showErrorMessage(`DevMate failed: ${e.message || e}`); }
 }
 async function stopAll(){
   if(globalContext){
@@ -408,9 +432,20 @@ async function copyUrl(){
   if(!url) return vscode.window.showWarningMessage('No ngrok URL for current gateway port. Run One-click Start first.');
   try{
     const test = await mcpHandshakeTest(url, globalContext);
+    const stamp = new Date().toISOString();
     await vscode.env.clipboard.writeText(test.mcp);
+    updateConnectionSnapshot(globalContext, {
+      lastPreflightAt: stamp,
+      lastCopiedAt: stamp,
+      lastPublicHost: publicHost(url),
+      lastMcpPath: MCP_PATH,
+      lastToolCount: test.toolCount,
+      lastServerName: test.server?.name || 'devmate',
+      lastError: '',
+      lastErrorAt: null
+    });
     vscode.window.showInformationMessage(`Copied verified MCP URL: ${redactUrl(test.mcp)}`);
-  }catch(e){ log(`MCP URL verification failed: ${e.stack || e.message || e}`); vscode.window.showErrorMessage(`MCP URL is not healthy: ${e.message || e}`); }
+  }catch(e){ updateConnectionSnapshot(globalContext,{lastError:String(e.message || e),lastErrorAt:new Date().toISOString()}); log(`MCP URL verification failed: ${e.stack || e.message || e}`); vscode.window.showErrorMessage(`MCP URL is not healthy: ${e.message || e}`); }
 }
 async function copyStarterPrompt(){
   const text = '使用 DevMate，完成这个开发任务。需要时可以读取、搜索、修改文件、运行命令和使用 Git；完成后用 task_report 总结结果。';
@@ -462,7 +497,7 @@ function panelHtml(ctx, webview){
   </head><body style="font-family: var(--vscode-font-family); padding:16px;">
   <h2>DevMate ${VERSION}</h2>
   <p><b>Active project:</b><br><code>${esc(root || 'Open a VS Code folder first')}</code></p>
-  <p><b>MCP:</b> <code>${esc(mcpDisplay)}</code><br><b>Local:</b> <code>127.0.0.1:${esc(data.server.port)}/mcp</code><br><b>Auth:</b> <code>${esc(data.auth?.required ? 'token required' : 'disabled')}</code><br><b>Permissions:</b> <code>${esc(data.permissions?.profile || 'fullAccess')}</code><br><b>Retention:</b> <code>${esc(data.maintenance?.backupRetentionDays || 30)}d backups / ${esc(data.maintenance?.auditRetentionDays || 30)}d audit</code><br><b>Start command:</b> <code>${esc(startCommandProcess ? 'running' : (String(cfg().get('defaultStartCommand') || '').trim() || 'not configured'))}</code></p>
+  <p><b>MCP:</b> <code>${esc(mcpDisplay)}</code><br><b>Local:</b> <code>127.0.0.1:${esc(data.server.port)}/mcp</code><br><b>Auth:</b> <code>${esc(data.auth?.required ? 'token required' : 'disabled')}</code><br><b>Permissions:</b> <code>${esc(data.permissions?.profile || 'fullAccess')}</code><br><b>Last preflight:</b> <code>${esc(data.connection?.lastPreflightAt ? `${data.connection.lastPreflightAt} ${data.connection.lastPublicHost || ''}` : 'not recorded')}</code><br><b>Retention:</b> <code>${esc(data.maintenance?.backupRetentionDays || 30)}d backups / ${esc(data.maintenance?.auditRetentionDays || 30)}d audit</code><br><b>Start command:</b> <code>${esc(startCommandProcess ? 'running' : (String(cfg().get('defaultStartCommand') || '').trim() || 'not configured'))}</code></p>
   <p><button data-cmd="quickStart">Start</button>
   <button data-cmd="copyUrl">Copy URL</button>
   <button data-cmd="stop">Stop</button>

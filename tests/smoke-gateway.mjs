@@ -11,12 +11,13 @@ const bundledGateway = path.join(root, 'gateway', 'server.bundle.mjs');
 const gatewayScript = process.env.DEVMATE_GATEWAY_SCRIPT || (fs.existsSync(bundledGateway) ? 'gateway/server.bundle.mjs' : 'gateway/server.mjs');
 
 const config = {
-  version: 6,
-  appVersion: '1.8.0',
+  version: 7,
+  appVersion: '1.9.0',
   instanceId: `smoke-${Date.now()}`,
   server: { port, mcpPath: '/mcp' },
   runtime: { defaultCommandTimeoutMs: 30000, maxOutputChars: 80000 },
   maintenance: { backupRetentionDays: 30, auditRetentionDays: 30, maxBackupBytes: 268435456, maxAuditBytes: 5242880 },
+  connection: { lastPreflightAt: new Date().toISOString(), lastPublicHost: 'example.ngrok-free.app', lastMcpPath: '/mcp', lastToolCount: 49, lastServerName: 'devmate', lastError: '' },
   auth: { required: true, token },
   permissions: { profile: 'fullAccess', readOnly: false, blockDangerousOperations: false, confirmBeforePush: false, allowDirectoryMutations: true },
   vscodeContext: {
@@ -122,7 +123,7 @@ try {
   const init = await rpc('initialize', {
     protocolVersion: '2025-03-26',
     capabilities: {},
-    clientInfo: { name: 'devmate-smoke', version: '1.8.0' }
+    clientInfo: { name: 'devmate-smoke', version: '1.9.0' }
   });
   assert(init.response.ok && init.json?.result?.serverInfo?.name === 'devmate', `initialize failed: ${init.text}`);
 
@@ -138,12 +139,26 @@ try {
   assert(toolByName.get('project_instructions')?.annotations?.readOnlyHint === true, 'project_instructions is missing readOnlyHint');
   assert(toolByName.get('show_changes')?.annotations?.readOnlyHint === true, 'show_changes is missing readOnlyHint');
   assert(toolByName.get('maintenance_status')?.annotations?.readOnlyHint === true, 'maintenance_status is missing readOnlyHint');
+  assert(toolByName.get('connection_diagnostics')?.annotations?.readOnlyHint === true, 'connection_diagnostics is missing readOnlyHint');
+  assert(toolByName.get('devmate_status_panel')?.annotations?.readOnlyHint === true, 'devmate_status_panel is missing readOnlyHint');
+  assert(toolByName.get('devmate_status_panel')?._meta?.ui?.resourceUri === 'ui://devmate/status.html', 'devmate_status_panel is missing UI resource metadata');
 
   const status = await rpc('tools/call', { name: 'gateway_status', arguments: {} });
   assert(status.response.ok && status.text.includes('fullAccess'), `gateway_status did not report fullAccess: ${status.text}`);
 
   const maintenance = await rpc('tools/call', { name: 'maintenance_status', arguments: {} });
   assert(maintenance.response.ok && maintenance.text.includes('auditRetentionDays'), `maintenance_status failed: ${maintenance.text}`);
+
+  const diagnostics = await rpc('tools/call', { name: 'connection_diagnostics', arguments: {} });
+  assert(diagnostics.response.ok && diagnostics.text.includes('example.ngrok-free.app') && diagnostics.text.includes('vscode'), `connection_diagnostics failed: ${diagnostics.text}`);
+
+  const statusPanel = await rpc('tools/call', { name: 'devmate_status_panel', arguments: {} });
+  assert(statusPanel.response.ok && statusPanel.text.includes('DevMate status'), `devmate_status_panel failed: ${statusPanel.text}`);
+
+  const resources = await rpc('resources/list', {});
+  assert(resources.response.ok && resources.text.includes('ui://devmate/status.html'), `resources/list did not include status UI: ${resources.text}`);
+  const statusUi = await rpc('resources/read', { uri: 'ui://devmate/status.html' });
+  assert(statusUi.response.ok && statusUi.text.includes('DevMate Connection') && statusUi.text.includes('text/html;profile=mcp-app'), `resources/read status UI failed: ${statusUi.text}`);
 
   const vscodeContext = await rpc('tools/call', { name: 'vscode_context', arguments: {} });
   assert(vscodeContext.response.ok && vscodeContext.text.includes('README.md'), `vscode_context failed: ${vscodeContext.text}`);
