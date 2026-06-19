@@ -32196,7 +32196,7 @@ var StreamableHTTPServerTransport = class {
 };
 
 // gateway/server.mjs
-var VERSION = "1.7.0";
+var VERSION = "1.7.1";
 var CONFIG_PATH = process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) {
   console.error("AIWG_CONFIG is required");
@@ -32283,6 +32283,18 @@ function safeResolve(root, sub = ".") {
   if (!isInside(rootPath, target)) throw new Error(`Path escapes workspace root: ${sub}`);
   return target;
 }
+function pathKey(p) {
+  return process.platform === "win32" ? String(p).toLowerCase() : String(p);
+}
+function realPathInside(root, full) {
+  try {
+    const rootReal = fs.realpathSync.native(root);
+    const fullReal = fs.realpathSync.native(full);
+    return isInside(rootReal, fullReal) ? fullReal : null;
+  } catch {
+    return null;
+  }
+}
 function assertRealInside(root, full) {
   const rootReal = fs.realpathSync.native(root);
   let check2 = full;
@@ -32350,6 +32362,20 @@ function truncate(s, max = DEFAULT_MAX_OUTPUT) {
 }
 function toolText(payload) {
   return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload };
+}
+function redactSensitiveString(value) {
+  return String(value ?? "").replace(/([?&](?:token|key|secret|password|auth|authorization)=)[^&\s]+/gi, "$1redacted").replace(/(\b(?:token|secret|password|authorization|api[_-]?key|authToken)\s*[:=]\s*)[^\s&"'`]+/gi, "$1redacted").replace(/(\bBearer\s+)[A-Za-z0-9._~+/=-]+/gi, "$1redacted").replace(/(\b(?:--password|--token|--api-key|--secret)\s+)[^\s]+/gi, "$1redacted").replace(/\bsk-[A-Za-z0-9_-]{10,}\b/g, "sk-redacted");
+}
+function redactSensitivePayload(value, key = "") {
+  if (value == null) return value;
+  if (typeof value === "string") return /token|secret|password|authorization|api[_-]?key|auth/i.test(key) ? "redacted" : redactSensitiveString(value);
+  if (Array.isArray(value)) return value.map((item, index) => redactSensitivePayload(item, String(index)));
+  if (typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = redactSensitivePayload(v, k);
+    return out;
+  }
+  return value;
 }
 var TOOL_OUTPUT_SCHEMA = external_exports.object({}).passthrough();
 var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
@@ -32472,6 +32498,7 @@ async function assertDirectoryMutationAllowed(cfg, w, full, rel) {
   if (!st.isDirectory()) return st;
   if (!cfg.permissions?.allowDirectoryMutations) throw new Error("Directory mutation blocked. Enable devMate.allowDirectoryMutations to delete or move directories.");
   let count = 0;
+  const visited = /* @__PURE__ */ new Set([pathKey(fs.realpathSync.native(full))]);
   async function scan(dir) {
     const entries = await fsp.readdir(dir, { withFileTypes: true });
     for (const e of entries) {
@@ -32480,7 +32507,14 @@ async function assertDirectoryMutationAllowed(cfg, w, full, rel) {
       if (isBinaryOrSecret(childRel)) throw new Error(`Directory mutation blocked because it contains protected path: ${childRel}`);
       count++;
       if (count > MAX_DIRECTORY_MUTATION_ENTRIES) throw new Error(`Directory mutation blocked because it contains more than ${MAX_DIRECTORY_MUTATION_ENTRIES} entries.`);
-      if (e.isDirectory()) await scan(child);
+      if (e.isDirectory()) {
+        const childReal = realPathInside(w.root, child);
+        if (!childReal) throw new Error(`Directory mutation blocked because it contains a directory outside the workspace: ${childRel}`);
+        const key = pathKey(childReal);
+        if (visited.has(key)) continue;
+        visited.add(key);
+        await scan(child);
+      }
     }
   }
   await scan(full);
@@ -32490,12 +32524,13 @@ async function audit(action, payload) {
   try {
     fs.mkdirSync(STATE_ROOT, { recursive: true });
     const cfg = loadConfig();
+    const safePayload = redactSensitivePayload(payload || {});
     const entry = {
       time: now(),
       action,
       taskId: payload?.taskId || cfg.task?.currentTaskId || null,
       permissionProfile: permissionProfile(cfg),
-      ...payload
+      ...safePayload
     };
     await fsp.appendFile(AUDIT_LOG, JSON.stringify(entry) + "\n", "utf8");
   } catch {
@@ -32509,9 +32544,9 @@ async function readAuditEntries(limit = 1e3) {
   }
   return lines.slice(-limit).map((x) => {
     try {
-      return JSON.parse(x);
+      return redactSensitivePayload(JSON.parse(x));
     } catch {
-      return { raw: x };
+      return { raw: redactSensitiveString(x) };
     }
   });
 }
@@ -32544,8 +32579,13 @@ async function withLock(file2, fn) {
     writeLocks.delete(key);
   }
 }
-async function walk(dir, root, depth, max, out) {
+async function walk(dir, root, depth, max, out, visited = /* @__PURE__ */ new Set()) {
   if (out.length >= max) return;
+  const dirReal = realPathInside(root, dir);
+  if (!dirReal) return;
+  const dirKey = pathKey(dirReal);
+  if (visited.has(dirKey)) return;
+  visited.add(dirKey);
   let entries = [];
   try {
     entries = await fsp.readdir(dir, { withFileTypes: true });
@@ -32559,16 +32599,23 @@ async function walk(dir, root, depth, max, out) {
     const rel = normalizeSlash(path.relative(root, full));
     if (isHidden(rel)) continue;
     if (e.isDirectory()) {
+      const childReal = realPathInside(root, full);
+      if (!childReal || visited.has(pathKey(childReal))) continue;
       out.push({ type: "dir", path: rel });
-      if (depth > 0) await walk(full, root, depth - 1, max, out);
+      if (depth > 0) await walk(full, root, depth - 1, max, out, visited);
     } else if (e.isFile() && isTextAllowed(rel)) {
       const st = await fsp.stat(full);
       out.push({ type: "file", path: rel, size: st.size });
     }
   }
 }
-async function allFiles(dir, root, out, max = 1e4) {
+async function allFiles(dir, root, out, max = 1e4, visited = /* @__PURE__ */ new Set()) {
   if (out.length >= max) return;
+  const dirReal = realPathInside(root, dir);
+  if (!dirReal) return;
+  const dirKey = pathKey(dirReal);
+  if (visited.has(dirKey)) return;
+  visited.add(dirKey);
   let entries = [];
   try {
     entries = await fsp.readdir(dir, { withFileTypes: true });
@@ -32580,7 +32627,7 @@ async function allFiles(dir, root, out, max = 1e4) {
     const full = path.join(dir, e.name);
     const rel = normalizeSlash(path.relative(root, full));
     if (isHidden(rel)) continue;
-    if (e.isDirectory()) await allFiles(full, root, out, max);
+    if (e.isDirectory()) await allFiles(full, root, out, max, visited);
     else if (e.isFile() && isTextAllowed(rel)) out.push(full);
   }
 }
@@ -32662,8 +32709,14 @@ async function projectInstructionFiles(w, maxFiles = 80, maxChars = 5e4) {
     remainingChars = Math.max(0, remainingChars - t.text.length);
     seen.add(rel.toLowerCase());
   }
+  const visited = /* @__PURE__ */ new Set();
   async function scan(dir) {
     if (loaded.length + available.length >= maxFiles) return;
+    const dirReal = realPathInside(w.root, dir);
+    if (!dirReal) return;
+    const dirKey = pathKey(dirReal);
+    if (visited.has(dirKey)) return;
+    visited.add(dirKey);
     let entries = [];
     try {
       entries = await fsp.readdir(dir, { withFileTypes: true });
@@ -32678,6 +32731,8 @@ async function projectInstructionFiles(w, maxFiles = 80, maxChars = 5e4) {
       const lowerName = e.name.toLowerCase();
       if (e.isDirectory()) {
         if (PROJECT_INSTRUCTION_SKIP_DIRS.has(lowerName)) continue;
+        const childReal = realPathInside(w.root, full);
+        if (!childReal || visited.has(pathKey(childReal))) continue;
         await scan(full);
       } else if (e.isFile() && PROJECT_INSTRUCTION_BASENAMES.has(lowerName) && !seen.has(rel.toLowerCase()) && isTextAllowed(rel)) {
         const st = await fsp.stat(full).catch(() => null);
@@ -32967,6 +33022,14 @@ function createServer() {
     const w = getWs(cfg, workspaceId);
     const root = assertRealInside(w.root, safeResolve(w.root, subpath));
     const results = [];
+    let fallbackRegex = null;
+    if (regex) {
+      try {
+        fallbackRegex = new RegExp(query);
+      } catch (e) {
+        throw new Error(`Invalid regex: ${e.message}`);
+      }
+    }
     const rgArgs = ["--line-number", "--no-heading", "--color", "never", "--glob", "!node_modules/**", "--glob", "!.git/**", "--glob", "!secrets/**", "--glob", "!credentials/**"];
     if (!regex) rgArgs.push("--fixed-strings");
     rgArgs.push(query, ".");
@@ -32993,7 +33056,7 @@ function createServer() {
       if (text == null) continue;
       const lines = text.split(/\r?\n/);
       for (let i = 0; i < lines.length; i++) {
-        const ok = regex ? new RegExp(query).test(lines[i]) : lines[i].toLowerCase().includes(q);
+        const ok = regex ? fallbackRegex.test(lines[i]) : lines[i].toLowerCase().includes(q);
         if (ok) {
           results.push({ file: normalizeSlash(path.relative(w.root, f)), line: i + 1, preview: lines[i].trim().slice(0, 300) });
           if (results.length >= maxResults) break;
@@ -33382,24 +33445,20 @@ function createServer() {
     });
   });
   server.registerTool("read_audit_log", { title: "Read audit log", description: "Read recent mutation/command audit entries.", inputSchema: { limit: external_exports.number().int().min(1).max(1e3).optional() } }, async ({ limit = 200 }) => {
-    let lines = [];
-    try {
-      lines = (await fsp.readFile(AUDIT_LOG, "utf8")).trim().split(/\r?\n/).filter(Boolean);
-    } catch {
-    }
-    return toolText({ entries: lines.slice(-limit).map((x) => {
-      try {
-        return JSON.parse(x);
-      } catch {
-        return { raw: x };
-      }
-    }) });
+    return toolText({ entries: await readAuditEntries(limit) });
   });
   return server;
 }
 var config2 = loadConfig();
 var httpServer = http.createServer(async (req, res) => {
-  const url2 = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+  let url2;
+  try {
+    url2 = new URL(req.url || "/", "http://localhost");
+  } catch {
+    res.writeHead(400, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "bad request url" }));
+    return;
+  }
   if (req.method === "OPTIONS") {
     res.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST,GET,DELETE,OPTIONS", "Access-Control-Allow-Headers": "content-type,mcp-session-id,authorization,x-devmate-token", "Access-Control-Expose-Headers": "Mcp-Session-Id" });
     res.end();

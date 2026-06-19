@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.1
+
+- Hardened MCP request URL parsing so malformed Host headers cannot affect route parsing.
+- Added realpath boundary checks to recursive workspace scans and directory mutation preflight.
+- Added basic sensitive value redaction for audit entries and audit log reads.
+- Improved regex search fallback validation and reduced source export noise.
+
 ## 1.7.0
 
 - Added `project_instructions` and included root `AGENTS.md` / `CLAUDE.md` context in `project_snapshot`.

@@ -12,7 +12,7 @@ const gatewayScript = process.env.DEVMATE_GATEWAY_SCRIPT || (fs.existsSync(bundl
 
 const config = {
   version: 5,
-  appVersion: '1.7.0',
+  appVersion: '1.7.1',
   instanceId: `smoke-${Date.now()}`,
   server: { port, mcpPath: '/mcp' },
   runtime: { defaultCommandTimeoutMs: 30000, maxOutputChars: 80000 },
@@ -121,7 +121,7 @@ try {
   const init = await rpc('initialize', {
     protocolVersion: '2025-03-26',
     capabilities: {},
-    clientInfo: { name: 'devmate-smoke', version: '1.7.0' }
+    clientInfo: { name: 'devmate-smoke', version: '1.7.1' }
   });
   assert(init.response.ok && init.json?.result?.serverInfo?.name === 'devmate', `initialize failed: ${init.text}`);
 
@@ -157,6 +157,14 @@ try {
 
   const commandRun = await rpc('tools/call', { name: 'run_configured_command', arguments: { key: 'node-version' } });
   assert(commandRun.response.ok && commandRun.text.includes('node-version'), `run_configured_command failed: ${commandRun.text}`);
+
+  const invalidRegex = await rpc('tools/call', { name: 'search_text', arguments: { query: '(', regex: true } });
+  assertToolError(invalidRegex, 'invalid regex block');
+
+  const secretCommand = await rpc('tools/call', { name: 'run_command', arguments: { command: 'node -e "console.log(\'token=secret123\')"', maxOutputChars: 2000 } });
+  assert(secretCommand.response.ok, `secret command failed: ${secretCommand.text}`);
+  const auditLog = await rpc('tools/call', { name: 'read_audit_log', arguments: { limit: 20 } });
+  assert(auditLog.response.ok && auditLog.text.includes('token=redacted') && !auditLog.text.includes('secret123'), `audit redaction failed: ${auditLog.text}`);
 
   const task = await rpc('tools/call', { name: 'start_task', arguments: { title: 'smoke rollback' } });
   assert(task.response.ok && task.text.includes('task-'), `start_task failed: ${task.text}`);

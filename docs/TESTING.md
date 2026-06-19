@@ -26,5 +26,7 @@ Manual acceptance:
 13. Run `detect_validation` and confirm it suggests the smallest relevant project checks.
 14. Confirm `start_task` + a file create/edit + `rollback_task` restores the file state.
 15. Switch `devMate.permissionProfile` to `balanced` and confirm `run_command` blocks `git reset --hard`.
+16. Confirm invalid regex input to `search_text` returns a tool error.
+17. Confirm `read_audit_log` redacts token-like values recorded by command audit entries.
 
 Known external dependency: ngrok must be installed and authenticated.

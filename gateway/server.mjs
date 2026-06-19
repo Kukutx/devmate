@@ -9,7 +9,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 
-const VERSION = '1.7.0';
+const VERSION = '1.7.1';
 const CONFIG_PATH = process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) { console.error('AIWG_CONFIG is required'); process.exit(1); }
 const CONFIG_DIR = path.dirname(CONFIG_PATH);
@@ -44,6 +44,8 @@ function isBinaryOrSecret(rel){ const base=path.basename(rel); if(isHidden(rel))
 function isTextAllowed(rel){ if(isBinaryOrSecret(rel)) return false; const base=path.basename(rel); if(ALLOW_BASENAME.has(base)) return true; if(base.startsWith('.env') && isEnvExample(base)) return true; const ext=path.extname(base).toLowerCase(); return TEXT_EXT.has(ext); }
 function isInside(root, target){ const rel=path.relative(root, target); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); }
 function safeResolve(root, sub='.'){ const rootPath=path.resolve(root); const target=path.resolve(rootPath, sub || '.'); if(!isInside(rootPath,target)) throw new Error(`Path escapes workspace root: ${sub}`); return target; }
+function pathKey(p){ return process.platform === 'win32' ? String(p).toLowerCase() : String(p); }
+function realPathInside(root, full){ try{ const rootReal=fs.realpathSync.native(root); const fullReal=fs.realpathSync.native(full); return isInside(rootReal, fullReal) ? fullReal : null; }catch{ return null; } }
 function assertRealInside(root, full){
   const rootReal = fs.realpathSync.native(root);
   let check = full;
@@ -73,6 +75,25 @@ function assertWritable(cfg,w,rel){ assertCanMutate(cfg,'Write'); if(w.reference
 function assertCwd(w,cwd='.') { return assertRealInside(w.root, safeResolve(w.root,cwd||'.')); }
 function truncate(s,max=DEFAULT_MAX_OUTPUT){ s=String(s??''); return { text:s.slice(0,max), truncated:s.length>max, length:s.length }; }
 function toolText(payload){ return { content:[{type:'text', text: JSON.stringify(payload,null,2)}], structuredContent: payload }; }
+function redactSensitiveString(value){
+  return String(value ?? '')
+    .replace(/([?&](?:token|key|secret|password|auth|authorization)=)[^&\s]+/gi, '$1redacted')
+    .replace(/(\b(?:token|secret|password|authorization|api[_-]?key|authToken)\s*[:=]\s*)[^\s&"'`]+/gi, '$1redacted')
+    .replace(/(\bBearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1redacted')
+    .replace(/(\b(?:--password|--token|--api-key|--secret)\s+)[^\s]+/gi, '$1redacted')
+    .replace(/\bsk-[A-Za-z0-9_-]{10,}\b/g, 'sk-redacted');
+}
+function redactSensitivePayload(value, key=''){
+  if(value == null) return value;
+  if(typeof value === 'string') return /token|secret|password|authorization|api[_-]?key|auth/i.test(key) ? 'redacted' : redactSensitiveString(value);
+  if(Array.isArray(value)) return value.map((item, index) => redactSensitivePayload(item, String(index)));
+  if(typeof value === 'object'){
+    const out = {};
+    for(const [k,v] of Object.entries(value)) out[k] = redactSensitivePayload(v, k);
+    return out;
+  }
+  return value;
+}
 const TOOL_OUTPUT_SCHEMA = z.object({}).passthrough();
 const READ_ONLY_TOOLS = new Set([
   'gateway_status','gateway_self_test','task_status','list_workspaces','vscode_context','active_editor_context','list_diagnostics',
@@ -148,6 +169,7 @@ async function assertDirectoryMutationAllowed(cfg,w,full,rel){
   if(!st.isDirectory()) return st;
   if(!cfg.permissions?.allowDirectoryMutations) throw new Error('Directory mutation blocked. Enable devMate.allowDirectoryMutations to delete or move directories.');
   let count = 0;
+  const visited = new Set([pathKey(fs.realpathSync.native(full))]);
   async function scan(dir){
     const entries = await fsp.readdir(dir,{withFileTypes:true});
     for(const e of entries){
@@ -156,7 +178,14 @@ async function assertDirectoryMutationAllowed(cfg,w,full,rel){
       if(isBinaryOrSecret(childRel)) throw new Error(`Directory mutation blocked because it contains protected path: ${childRel}`);
       count++;
       if(count > MAX_DIRECTORY_MUTATION_ENTRIES) throw new Error(`Directory mutation blocked because it contains more than ${MAX_DIRECTORY_MUTATION_ENTRIES} entries.`);
-      if(e.isDirectory()) await scan(child);
+      if(e.isDirectory()){
+        const childReal = realPathInside(w.root, child);
+        if(!childReal) throw new Error(`Directory mutation blocked because it contains a directory outside the workspace: ${childRel}`);
+        const key = pathKey(childReal);
+        if(visited.has(key)) continue;
+        visited.add(key);
+        await scan(child);
+      }
     }
   }
   await scan(full);
@@ -166,12 +195,13 @@ async function audit(action, payload){
   try{
     fs.mkdirSync(STATE_ROOT,{recursive:true});
     const cfg = loadConfig();
+    const safePayload = redactSensitivePayload(payload || {});
     const entry = {
       time: now(),
       action,
       taskId: payload?.taskId || cfg.task?.currentTaskId || null,
       permissionProfile: permissionProfile(cfg),
-      ...payload
+      ...safePayload
     };
     await fsp.appendFile(AUDIT_LOG, JSON.stringify(entry)+'\n','utf8');
   }catch{}
@@ -179,7 +209,7 @@ async function audit(action, payload){
 async function readAuditEntries(limit=1000){
   let lines=[];
   try{ lines=(await fsp.readFile(AUDIT_LOG,'utf8')).trim().split(/\r?\n/).filter(Boolean); }catch{}
-  return lines.slice(-limit).map(x=>{try{return JSON.parse(x)}catch{return {raw:x}}});
+  return lines.slice(-limit).map(x=>{try{return redactSensitivePayload(JSON.parse(x))}catch{return {raw:redactSensitiveString(x)}}});
 }
 function backupSafeRel(rel){
   const parts = normalizeSlash(rel).split('/').filter(x => x && x !== '.' && x !== '..');
@@ -199,8 +229,50 @@ async function backupPath(full, rel){
   }catch(e){ return `backup_failed:${e.message}`; }
 }
 async function withLock(file, fn){ const key=path.resolve(file).toLowerCase(); if(writeLocks.has(key)) throw new Error(`Path locked by another write: ${file}`); writeLocks.add(key); try{return await fn();} finally{writeLocks.delete(key);} }
-async function walk(dir, root, depth, max, out){ if(out.length>=max) return; let entries=[]; try{entries=await fsp.readdir(dir,{withFileTypes:true});}catch{return;} entries.sort((a,b)=>a.name.localeCompare(b.name)); for(const e of entries){ if(out.length>=max) break; const full=path.join(dir,e.name); const rel=normalizeSlash(path.relative(root,full)); if(isHidden(rel)) continue; if(e.isDirectory()){ out.push({type:'dir',path:rel}); if(depth>0) await walk(full,root,depth-1,max,out); } else if(e.isFile() && isTextAllowed(rel)){ const st=await fsp.stat(full); out.push({type:'file',path:rel,size:st.size}); } } }
-async function allFiles(dir,root,out,max=10000){ if(out.length>=max) return; let entries=[]; try{entries=await fsp.readdir(dir,{withFileTypes:true});}catch{return;} for(const e of entries){ if(out.length>=max) break; const full=path.join(dir,e.name); const rel=normalizeSlash(path.relative(root,full)); if(isHidden(rel)) continue; if(e.isDirectory()) await allFiles(full,root,out,max); else if(e.isFile() && isTextAllowed(rel)) out.push(full); } }
+async function walk(dir, root, depth, max, out, visited=new Set()){
+  if(out.length>=max) return;
+  const dirReal = realPathInside(root, dir);
+  if(!dirReal) return;
+  const dirKey = pathKey(dirReal);
+  if(visited.has(dirKey)) return;
+  visited.add(dirKey);
+  let entries=[];
+  try{entries=await fsp.readdir(dir,{withFileTypes:true});}catch{return;}
+  entries.sort((a,b)=>a.name.localeCompare(b.name));
+  for(const e of entries){
+    if(out.length>=max) break;
+    const full=path.join(dir,e.name);
+    const rel=normalizeSlash(path.relative(root,full));
+    if(isHidden(rel)) continue;
+    if(e.isDirectory()){
+      const childReal = realPathInside(root, full);
+      if(!childReal || visited.has(pathKey(childReal))) continue;
+      out.push({type:'dir',path:rel});
+      if(depth>0) await walk(full,root,depth-1,max,out,visited);
+    } else if(e.isFile() && isTextAllowed(rel)){
+      const st=await fsp.stat(full);
+      out.push({type:'file',path:rel,size:st.size});
+    }
+  }
+}
+async function allFiles(dir,root,out,max=10000,visited=new Set()){
+  if(out.length>=max) return;
+  const dirReal = realPathInside(root, dir);
+  if(!dirReal) return;
+  const dirKey = pathKey(dirReal);
+  if(visited.has(dirKey)) return;
+  visited.add(dirKey);
+  let entries=[];
+  try{entries=await fsp.readdir(dir,{withFileTypes:true});}catch{return;}
+  for(const e of entries){
+    if(out.length>=max) break;
+    const full=path.join(dir,e.name);
+    const rel=normalizeSlash(path.relative(root,full));
+    if(isHidden(rel)) continue;
+    if(e.isDirectory()) await allFiles(full,root,out,max,visited);
+    else if(e.isFile() && isTextAllowed(rel)) out.push(full);
+  }
+}
 function execProcess(command,args,{cwd,timeoutMs=DEFAULT_TIMEOUT_MS,maxOutputChars=DEFAULT_MAX_OUTPUT,shell=false}={}){ return new Promise(resolve=>{ const child=spawn(command,args,{cwd,encoding:'utf8',shell,windowsHide:true}); let stdout='', stderr='', done=false; const timer=setTimeout(()=>{ if(done) return; done=true; try{child.kill('SIGKILL');}catch{} resolve({command:shell?command:[command,...args].join(' '),cwd,exitCode:null,timedOut:true,...truncateOutputs(stdout,stderr,maxOutputChars)}); },timeoutMs); child.stdout?.on('data',d=>{ stdout += d.toString(); if(stdout.length>maxOutputChars*2) stdout=stdout.slice(-maxOutputChars*2); }); child.stderr?.on('data',d=>{ stderr += d.toString(); if(stderr.length>maxOutputChars*2) stderr=stderr.slice(-maxOutputChars*2); }); child.on('error',e=>{ if(done) return; done=true; clearTimeout(timer); resolve({command:shell?command:[command,...args].join(' '),cwd,exitCode:null,error:e.message,...truncateOutputs(stdout,stderr,maxOutputChars)}); }); child.on('close',code=>{ if(done) return; done=true; clearTimeout(timer); resolve({command:shell?command:[command,...args].join(' '),cwd,exitCode:code,timedOut:false,...truncateOutputs(stdout,stderr,maxOutputChars)}); }); }); }
 function truncateOutputs(stdout,stderr,max){ const so=truncate(stdout,max); const se=truncate(stderr,max); return {stdout:so.text,stderr:se.text,stdoutTruncated:so.truncated,stderrTruncated:se.truncated}; }
 async function runGit(w,args,maxOutputChars=DEFAULT_MAX_OUTPUT,timeoutMs=DEFAULT_TIMEOUT_MS){ return execProcess('git',args,{cwd:w.root,maxOutputChars,timeoutMs,shell:false}); }
@@ -236,8 +308,14 @@ async function projectInstructionFiles(w, maxFiles=80, maxChars=50000) {
     seen.add(rel.toLowerCase());
   }
 
+  const visited = new Set();
   async function scan(dir) {
     if (loaded.length + available.length >= maxFiles) return;
+    const dirReal = realPathInside(w.root, dir);
+    if(!dirReal) return;
+    const dirKey = pathKey(dirReal);
+    if(visited.has(dirKey)) return;
+    visited.add(dirKey);
     let entries = [];
     try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
     entries.sort((a, b) => a.name.localeCompare(b.name));
@@ -248,6 +326,8 @@ async function projectInstructionFiles(w, maxFiles=80, maxChars=50000) {
       const lowerName = e.name.toLowerCase();
       if (e.isDirectory()) {
         if (PROJECT_INSTRUCTION_SKIP_DIRS.has(lowerName)) continue;
+        const childReal = realPathInside(w.root, full);
+        if(!childReal || visited.has(pathKey(childReal))) continue;
         await scan(full);
       } else if (e.isFile() && PROJECT_INSTRUCTION_BASENAMES.has(lowerName) && !seen.has(rel.toLowerCase()) && isTextAllowed(rel)) {
         const st = await fsp.stat(full).catch(() => null);
@@ -421,8 +501,8 @@ function createServer(){
 
   server.registerTool('list_files',{title:'List files',description:'List safe files/folders under a path.',inputSchema:{workspaceId:z.string().optional(),subpath:z.string().optional(),depth:z.number().int().min(0).max(8).optional(),maxResults:z.number().int().min(1).max(5000).optional()}},async({workspaceId,subpath='.',depth=2,maxResults=500})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const root=assertRealInside(w.root,safeResolve(w.root,subpath)); const items=[]; await walk(root,w.root,depth,maxResults,items); return toolText({workspace:wsPublic(w),subpath,items}); });
   server.registerTool('read_file',{title:'Read file',description:'Read a UTF-8 text/code file. Returns sha256.',inputSchema:{workspaceId:z.string().optional(),path:z.string().optional(),filePath:z.string().optional(),startLine:z.number().int().min(1).optional(),endLine:z.number().int().min(1).optional(),maxChars:z.number().int().min(1000).max(500000).optional()}},async({workspaceId,path:pp,filePath,startLine,endLine,maxChars=DEFAULT_MAX_OUTPUT})=>{ const rel=pp||filePath; if(!rel) throw new Error('path is required'); const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const full=assertReadable(w,rel); const st=await fsp.stat(full); if(!st.isFile()) throw new Error('Not a file'); if(st.size>MAX_FILE_BYTES) throw new Error(`File too large: ${st.size} bytes`); let text=await fsp.readFile(full,'utf8'); const fullSha=sha256(text); if(startLine||endLine){ const lines=text.split(/\r?\n/); const s=startLine||1, e=endLine||lines.length; if(s>e) throw new Error('startLine must be <= endLine'); text=lines.slice(s-1,e).join('\n'); } const t=truncate(text,maxChars); return toolText({workspace:wsPublic(w),path:rel,sha256:fullSha,truncated:t.truncated,text:t.text}); });
-  server.registerTool('search_text',{title:'Search text',description:'Search text/code files. Literal by default, regex optional.',inputSchema:{workspaceId:z.string().optional(),query:z.string().min(1),subpath:z.string().optional(),maxResults:z.number().int().min(1).max(500).optional(),regex:z.boolean().optional()}},async({workspaceId,query,subpath='.',maxResults=120,regex=false})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const root=assertRealInside(w.root,safeResolve(w.root,subpath)); const results=[]; const rgArgs=['--line-number','--no-heading','--color','never','--glob','!node_modules/**','--glob','!.git/**','--glob','!secrets/**','--glob','!credentials/**']; if(!regex) rgArgs.push('--fixed-strings'); rgArgs.push(query,'.'); const rg=await execProcess('rg',rgArgs,{cwd:root,maxOutputChars:DEFAULT_MAX_OUTPUT,timeoutMs:30000,shell:false}); if(rg.exitCode===0 && rg.stdout){ for(const line of rg.stdout.split(/\r?\n/)){ if(!line) continue; const m=line.match(/^(.*?):(\d+):(.*)$/); if(!m) continue; const rel=normalizeSlash(path.relative(w.root,path.resolve(root,m[1]))); if(isTextAllowed(rel)) results.push({file:rel,line:Number(m[2]),preview:m[3].trim().slice(0,300)}); if(results.length>=maxResults) break; } return toolText({workspace:wsPublic(w),query,engine:'ripgrep',results}); }
-    const files=[]; await allFiles(root,w.root,files,10000); const q=query.toLowerCase(); for(const f of files){ if(results.length>=maxResults) break; const st=await fsp.stat(f).catch(()=>null); if(!st||st.size>1024*1024) continue; const text=await fsp.readFile(f,'utf8').catch(()=>null); if(text==null) continue; const lines=text.split(/\r?\n/); for(let i=0;i<lines.length;i++){ const ok=regex ? new RegExp(query).test(lines[i]) : lines[i].toLowerCase().includes(q); if(ok){ results.push({file:normalizeSlash(path.relative(w.root,f)),line:i+1,preview:lines[i].trim().slice(0,300)}); if(results.length>=maxResults) break; } } } return toolText({workspace:wsPublic(w),query,engine:'builtin',results}); });
+  server.registerTool('search_text',{title:'Search text',description:'Search text/code files. Literal by default, regex optional.',inputSchema:{workspaceId:z.string().optional(),query:z.string().min(1),subpath:z.string().optional(),maxResults:z.number().int().min(1).max(500).optional(),regex:z.boolean().optional()}},async({workspaceId,query,subpath='.',maxResults=120,regex=false})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const root=assertRealInside(w.root,safeResolve(w.root,subpath)); const results=[]; let fallbackRegex=null; if(regex){ try{ fallbackRegex=new RegExp(query); }catch(e){ throw new Error(`Invalid regex: ${e.message}`); } } const rgArgs=['--line-number','--no-heading','--color','never','--glob','!node_modules/**','--glob','!.git/**','--glob','!secrets/**','--glob','!credentials/**']; if(!regex) rgArgs.push('--fixed-strings'); rgArgs.push(query,'.'); const rg=await execProcess('rg',rgArgs,{cwd:root,maxOutputChars:DEFAULT_MAX_OUTPUT,timeoutMs:30000,shell:false}); if(rg.exitCode===0 && rg.stdout){ for(const line of rg.stdout.split(/\r?\n/)){ if(!line) continue; const m=line.match(/^(.*?):(\d+):(.*)$/); if(!m) continue; const rel=normalizeSlash(path.relative(w.root,path.resolve(root,m[1]))); if(isTextAllowed(rel)) results.push({file:rel,line:Number(m[2]),preview:m[3].trim().slice(0,300)}); if(results.length>=maxResults) break; } return toolText({workspace:wsPublic(w),query,engine:'ripgrep',results}); }
+    const files=[]; await allFiles(root,w.root,files,10000); const q=query.toLowerCase(); for(const f of files){ if(results.length>=maxResults) break; const st=await fsp.stat(f).catch(()=>null); if(!st||st.size>1024*1024) continue; const text=await fsp.readFile(f,'utf8').catch(()=>null); if(text==null) continue; const lines=text.split(/\r?\n/); for(let i=0;i<lines.length;i++){ const ok=regex ? fallbackRegex.test(lines[i]) : lines[i].toLowerCase().includes(q); if(ok){ results.push({file:normalizeSlash(path.relative(w.root,f)),line:i+1,preview:lines[i].trim().slice(0,300)}); if(results.length>=maxResults) break; } } } return toolText({workspace:wsPublic(w),query,engine:'builtin',results}); });
   server.registerTool('write_file',{title:'Write file',description:'Write or overwrite a text/code file in active workspace. Existing file is backed up.',inputSchema:{workspaceId:z.string().optional(),path:z.string(),content:z.string(),append:z.boolean().optional(),createDirs:z.boolean().optional()}},async({workspaceId,path:rel,content,append=false,createDirs=true})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const full=assertWritable(cfg,w,rel); return withLock(full,async()=>{ if(createDirs) await fsp.mkdir(path.dirname(full),{recursive:true}); const backup=await backupPath(full,rel); const before=await fsp.readFile(full,'utf8').catch(()=>null); await fsp.writeFile(full, append ? ((before||'')+content) : content, 'utf8'); await audit('write_file',{workspace:w.id,path:rel,append,backup}); const next=await fsp.readFile(full,'utf8'); return toolText({workspace:wsPublic(w),path:rel,backup,sha256:sha256(next),written:true}); }); });
   server.registerTool('create_file',{title:'Create file',description:'Create a text/code file. Overwrite allowed when requested; existing file is backed up.',inputSchema:{workspaceId:z.string().optional(),path:z.string(),content:z.string(),overwrite:z.boolean().optional(),createDirs:z.boolean().optional()}},async({workspaceId,path:rel,content,overwrite=false,createDirs=true})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const full=assertWritable(cfg,w,rel); return withLock(full,async()=>{ if(createDirs) await fsp.mkdir(path.dirname(full),{recursive:true}); const exists=fs.existsSync(full); if(exists && !overwrite) throw new Error('File exists; pass overwrite=true or use write_file/apply_patch'); const backup=exists?await backupPath(full,rel):null; await fsp.writeFile(full,content,'utf8'); await audit('create_file',{workspace:w.id,path:rel,overwrite,backup}); return toolText({workspace:wsPublic(w),path:rel,backup,sha256:sha256(content),created:!exists,overwritten:exists}); }); });
   server.registerTool('apply_patch',{title:'Apply patch',description:'Replace exact oldText with newText. expectedSha256 optional.',inputSchema:{workspaceId:z.string().optional(),path:z.string().optional(),filePath:z.string().optional(),oldText:z.string(),newText:z.string(),expectedSha256:z.string().optional(),allOccurrences:z.boolean().optional()}},async({workspaceId,path:pp,filePath,oldText,newText,expectedSha256,allOccurrences=false})=>{ const rel=pp||filePath; if(!rel) throw new Error('path is required'); const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const full=assertWritable(cfg,w,rel); return withLock(full,async()=>{ const text=await fsp.readFile(full,'utf8'); const beforeSha=sha256(text); if(expectedSha256 && expectedSha256!==beforeSha) throw new Error(`sha256 mismatch: expected ${expectedSha256}, actual ${beforeSha}`); if(!text.includes(oldText)) throw new Error('oldText not found'); if(!allOccurrences && text.indexOf(oldText)!==text.lastIndexOf(oldText)) throw new Error('oldText appears multiple times; set allOccurrences=true or provide more specific oldText'); const backup=await backupPath(full,rel); const next=allOccurrences ? text.split(oldText).join(newText) : text.replace(oldText,newText); await fsp.writeFile(full,next,'utf8'); await audit('apply_patch',{workspace:w.id,path:rel,backup}); return toolText({workspace:wsPublic(w),path:rel,backup,oldSha256:beforeSha,newSha256:sha256(next),changed:true}); }); });
@@ -458,13 +538,19 @@ function createServer(){
 
   server.registerTool('list_backups',{title:'List backups',description:'List recent automatic backups.',inputSchema:{limit:z.number().int().min(1).max(500).optional()}},async({limit=80})=>{ const items=[]; async function scan(dir){ let entries=[]; try{entries=await fsp.readdir(dir,{withFileTypes:true});}catch{return;} for(const e of entries){ const full=path.join(dir,e.name); if(e.isDirectory()) await scan(full); else { const st=await fsp.stat(full); items.push({path:full,time:st.mtime.toISOString(),size:st.size}); } } } await scan(BACKUP_ROOT); items.sort((a,b)=>b.time.localeCompare(a.time)); return toolText({backups:items.slice(0,limit)}); });
   server.registerTool('restore_backup',{title:'Restore backup',description:'Restore a single file from a DevMate automatic backup. Current target is backed up first.',inputSchema:{workspaceId:z.string().optional(),backupPath:z.string(),targetPath:z.string().optional(),overwrite:z.boolean().optional()}},async({workspaceId,backupPath:bp,targetPath,overwrite=true})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const backupFull=assertRealInside(BACKUP_ROOT,path.resolve(bp)); const st=await fsp.stat(backupFull); if(!st.isFile()) throw new Error('Only single-file backup restore is supported'); const rel=targetPath || backupRelativePath(backupFull); const dst=assertWritable(cfg,w,rel); return withLock(dst,async()=>{ if(fs.existsSync(dst) && !overwrite) throw new Error('Target exists; pass overwrite=true to restore over it'); await fsp.mkdir(path.dirname(dst),{recursive:true}); const currentBackup=fs.existsSync(dst)?await backupPath(dst,rel):null; await fsp.copyFile(backupFull,dst); const text=await fsp.readFile(dst,'utf8').catch(()=>null); await audit('restore_backup',{workspace:w.id,backupPath:backupFull,targetPath:rel,currentBackup}); return toolText({workspace:wsPublic(w),backupPath:backupFull,targetPath:rel,currentBackup,sha256:text==null?null:sha256(text),restored:true}); }); });
-  server.registerTool('read_audit_log',{title:'Read audit log',description:'Read recent mutation/command audit entries.',inputSchema:{limit:z.number().int().min(1).max(1000).optional()}},async({limit=200})=>{ let lines=[]; try{ lines=(await fsp.readFile(AUDIT_LOG,'utf8')).trim().split(/\r?\n/).filter(Boolean); }catch{} return toolText({entries:lines.slice(-limit).map(x=>{try{return JSON.parse(x)}catch{return {raw:x}}})}); });
+  server.registerTool('read_audit_log',{title:'Read audit log',description:'Read recent mutation/command audit entries.',inputSchema:{limit:z.number().int().min(1).max(1000).optional()}},async({limit=200})=>{ return toolText({entries:await readAuditEntries(limit)}); });
   return server;
 }
 
 const config = loadConfig();
 const httpServer = http.createServer(async (req,res)=>{
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  let url;
+  try { url = new URL(req.url || '/', 'http://localhost'); }
+  catch {
+    res.writeHead(400,{'content-type':'application/json'});
+    res.end(JSON.stringify({error:'bad request url'}));
+    return;
+  }
   if(req.method === 'OPTIONS') { res.writeHead(204, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'POST,GET,DELETE,OPTIONS','Access-Control-Allow-Headers':'content-type,mcp-session-id,authorization,x-devmate-token','Access-Control-Expose-Headers':'Mcp-Session-Id'}); res.end(); return; }
   if(req.method === 'GET' && url.pathname==='/control/health') { const addr = req.socket.remoteAddress || ''; const local = addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1'; if(!local){ res.writeHead(403,{'content-type':'application/json'}); res.end(JSON.stringify({error:'local control endpoint only'})); return; } res.writeHead(200,{'content-type':'application/json'}); res.end(JSON.stringify({name:'devmate',version:VERSION,status:'ok',mcpPath:'/mcp',instanceId:config.instanceId,port:config.server.port,configPath:CONFIG_PATH,stateRoot:STATE_ROOT})); return; }
   if(req.method === 'GET' && (url.pathname==='/' || url.pathname==='/health')) { res.writeHead(200,{'content-type':'application/json'}); const base={name:'devmate',version:VERSION,status:'ok',mcpPath:'/mcp'}; const full={...base,instanceId:config.instanceId,port:config.server.port}; res.end(JSON.stringify(PUBLIC_HEALTH_DETAILS?full:base)); return; }

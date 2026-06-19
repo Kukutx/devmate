@@ -7,7 +7,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
-const VERSION = '1.7.0';
+const VERSION = '1.7.1';
 const BASE_PORT = 8787;
 const MCP_PATH = '/mcp';
 let gatewayProcess = null;
@@ -502,7 +502,9 @@ async function exportSource(ctx){
   const stamp = new Date().toISOString().replace(/[:.]/g,'-');
   const outDir = path.join(target[0].fsPath, `devmate-source-${stamp}`);
   fs.mkdirSync(outDir, {recursive:true});
-  function cp(src,dst){ const st=fs.statSync(src); if(st.isDirectory()){ fs.mkdirSync(dst,{recursive:true}); for(const e of fs.readdirSync(src)) cp(path.join(src,e), path.join(dst,e)); } else fs.copyFileSync(src,dst); }
+  const skipDirs = new Set(['.git','node_modules','tmp','.vscode']);
+  function shouldSkip(src){ const name=path.basename(src); return skipDirs.has(name) || /\.(vsix|tgz|log)$/i.test(name) || /^npm-debug\.log/i.test(name) || /^yarn-(debug|error)\.log/i.test(name); }
+  function cp(src,dst){ if(shouldSkip(src)) return; const st=fs.statSync(src); if(st.isDirectory()){ fs.mkdirSync(dst,{recursive:true}); for(const e of fs.readdirSync(src)) cp(path.join(src,e), path.join(dst,e)); } else fs.copyFileSync(src,dst); }
   cp(ctx.extensionPath, outDir);
   vscode.window.showInformationMessage(`Source exported: ${outDir}`);
 }
