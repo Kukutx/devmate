@@ -9,7 +9,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 
-const VERSION = '1.6.2';
+const VERSION = '1.7.0';
 const CONFIG_PATH = process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) { console.error('AIWG_CONFIG is required'); process.exit(1); }
 const CONFIG_DIR = path.dirname(CONFIG_PATH);
@@ -27,6 +27,9 @@ const HIDDEN_DIRS = new Set(['.git','node_modules','.next','.dart_tool','.fireba
 const BLOCKED_EXT = new Set(['.pem','.key','.pfx','.p12','.db','.sqlite','.sqlite3','.log']);
 const TEXT_EXT = new Set(['.md','.mdx','.txt','.json','.jsonc','.yaml','.yml','.js','.jsx','.ts','.tsx','.cjs','.mjs','.css','.scss','.sass','.less','.html','.xml','.cs','.csproj','.sln','.dart','.py','.ps1','.sh','.bash','.zsh','.sql','.toml','.ini','.config','.props','.targets','.java','.kt','.kts','.go','.rs','.php','.rb','.swift','.vue','.svelte','.env.example','.env.sample','.sample']);
 const ALLOW_BASENAME = new Set(['README','README.md','LICENSE','Dockerfile','Makefile','package.json','package-lock.json','pnpm-lock.yaml','yarn.lock','bun.lockb','pubspec.yaml','pubspec.lock','global.json','Directory.Packages.props']);
+const PROJECT_INSTRUCTION_BASENAMES = new Set(['agents.md','claude.md']);
+const ROOT_PROJECT_INSTRUCTION_FILES = ['AGENTS.md','CLAUDE.md'];
+const PROJECT_INSTRUCTION_SKIP_DIRS = new Set([...HIDDEN_DIRS, '.github', '.vscode', '.idea', 'tmp']);
 
 function readJson(p){ return JSON.parse(fs.readFileSync(p,'utf8').replace(/^\uFEFF/,'')); }
 function loadConfig(){ const c=readJson(CONFIG_PATH); c.server ||= {}; c.instanceId ||= 'missing-instance'; c.server.port ||= 8787; c.server.mcpPath = '/mcp'; c.runtime ||= {}; c.runtime.defaultCommandTimeoutMs ||= DEFAULT_TIMEOUT_MS; c.runtime.maxOutputChars ||= DEFAULT_MAX_OUTPUT; c.workspaces ||= []; c.commands ||= []; return c; }
@@ -73,8 +76,8 @@ function toolText(payload){ return { content:[{type:'text', text: JSON.stringify
 const TOOL_OUTPUT_SCHEMA = z.object({}).passthrough();
 const READ_ONLY_TOOLS = new Set([
   'gateway_status','gateway_self_test','task_status','list_workspaces','vscode_context','active_editor_context','list_diagnostics',
-  'workspace_map','project_snapshot','list_project_scripts','list_configured_commands','detect_validation','list_files','read_file',
-  'search_text','git_status','git_diff','git_staged_files','git_log','git_blame','task_report','list_backups','read_audit_log'
+  'workspace_map','project_snapshot','project_instructions','list_project_scripts','list_configured_commands','detect_validation','list_files','read_file',
+  'search_text','git_status','git_diff','git_staged_files','git_log','git_blame','show_changes','task_report','list_backups','read_audit_log'
 ]);
 const DESTRUCTIVE_TOOLS = new Set([
   'rollback_task','write_file','create_file','apply_patch','delete_file','move_file','restore_backup',
@@ -213,6 +216,87 @@ async function readPackageScripts(w, subpath='.') {
     return { path: normalizeSlash(path.relative(w.root, pkgPath)), error: e.message, scripts: {} };
   }
 }
+async function projectInstructionFiles(w, maxFiles=80, maxChars=50000) {
+  maxFiles = clampInt(maxFiles, 80, 1, 200);
+  maxChars = clampInt(maxChars, 50000, 1000, 200000);
+  const loaded = [];
+  const available = [];
+  const seen = new Set();
+  let remainingChars = maxChars;
+
+  for (const rel of ROOT_PROJECT_INSTRUCTION_FILES) {
+    const full = safeResolve(w.root, rel);
+    const st = await fsp.stat(full).catch(() => null);
+    if (!st?.isFile() || !isTextAllowed(rel)) continue;
+    const text = await fsp.readFile(full, 'utf8').catch(() => null);
+    if (text == null) continue;
+    const t = truncate(text, remainingChars);
+    loaded.push({ path: rel, length: text.length, truncated: t.truncated, text: t.text });
+    remainingChars = Math.max(0, remainingChars - t.text.length);
+    seen.add(rel.toLowerCase());
+  }
+
+  async function scan(dir) {
+    if (loaded.length + available.length >= maxFiles) return;
+    let entries = [];
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const e of entries) {
+      if (loaded.length + available.length >= maxFiles) break;
+      const full = path.join(dir, e.name);
+      const rel = normalizeSlash(path.relative(w.root, full));
+      const lowerName = e.name.toLowerCase();
+      if (e.isDirectory()) {
+        if (PROJECT_INSTRUCTION_SKIP_DIRS.has(lowerName)) continue;
+        await scan(full);
+      } else if (e.isFile() && PROJECT_INSTRUCTION_BASENAMES.has(lowerName) && !seen.has(rel.toLowerCase()) && isTextAllowed(rel)) {
+        const st = await fsp.stat(full).catch(() => null);
+        available.push({ path: rel, size: st?.size || 0 });
+        seen.add(rel.toLowerCase());
+      }
+    }
+  }
+
+  await scan(w.root);
+  return { loaded, available, total: loaded.length + available.length, truncated: loaded.length + available.length >= maxFiles };
+}
+function parseNumstat(stdout='') {
+  const files = [];
+  for (const line of String(stdout || '').split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const parts = line.split('\t');
+    if (parts.length < 3) continue;
+    const [add, remove, ...rest] = parts;
+    files.push({
+      path: rest.join('\t'),
+      additions: add === '-' ? null : Number(add) || 0,
+      removals: remove === '-' ? null : Number(remove) || 0
+    });
+  }
+  return files;
+}
+function changeSummary(files=[]) {
+  let additions = 0;
+  let removals = 0;
+  let binaryFiles = 0;
+  for (const f of files) {
+    if (typeof f.additions === 'number') additions += f.additions;
+    else binaryFiles++;
+    if (typeof f.removals === 'number') removals += f.removals;
+  }
+  return { filesChanged: files.length, additions, removals, binaryFiles };
+}
+async function gitChangeReview(w, staged=false, maxOutputChars=80000) {
+  const diffArgs = staged ? ['diff','--staged'] : ['diff'];
+  const [status, diffStat, numstat, patch] = await Promise.all([
+    runGit(w, ['status','--short','--branch'], 20000),
+    runGit(w, [...diffArgs, '--stat'], 20000),
+    runGit(w, [...diffArgs, '--numstat'], 50000),
+    runGit(w, diffArgs, maxOutputChars)
+  ]);
+  const files = parseNumstat(numstat.stdout);
+  return { workspace: wsPublic(w), staged, status, diffStat, summary: changeSummary(files), files, patch };
+}
 async function compactTree(w, depth=2, maxResults=350) {
   const items=[];
   await walk(w.root, w.root, depth, maxResults, items);
@@ -329,7 +413,8 @@ function createServer(){
   server.registerTool('list_diagnostics',{title:'List VS Code diagnostics',description:'Return latest VS Code Problems diagnostics, optionally filtered by severity or path.',inputSchema:{severity:z.enum(['error','warning','information','hint']).optional(),path:z.string().optional(),limit:z.number().int().min(1).max(300).optional()}},async({severity,path:pp,limit=100})=>{ const cfg=loadConfig(); let items=cfg.vscodeContext?.diagnostics || []; if(severity) items=items.filter(d=>d.severity===severity); if(pp) items=items.filter(d=>d.path===pp || d.path.endsWith(pp)); return toolText({capturedAt:cfg.vscodeContext?.capturedAt,diagnostics:items.slice(0,limit),total:items.length}); });
   server.registerTool('workspace_map',{title:'Workspace map',description:'Return compact directory map.',inputSchema:{workspaceId:z.string().optional(),depth:z.number().int().min(0).max(6).optional(),maxResults:z.number().int().min(20).max(2000).optional()}},async({workspaceId,depth=2,maxResults=300})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const items=[]; await walk(w.root,w.root,depth,maxResults,items); return toolText({workspace:wsPublic(w),depth,items}); });
 
-  server.registerTool('project_snapshot',{title:'Project snapshot',description:'One-call startup context: workspace, compact tree, git status, git diff stat, and package scripts when available.',inputSchema:{workspaceId:z.string().optional(),depth:z.number().int().min(0).max(5).optional(),maxResults:z.number().int().min(20).max(1500).optional(),includeScripts:z.boolean().optional()}},async({workspaceId,depth=2,maxResults=350,includeScripts=true})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const [status,diffStat,tree,scripts] = await Promise.all([runGit(w,['status','--short','--branch']), runGit(w,['diff','--stat'],20000,30000), compactTree(w,depth,maxResults), includeScripts?readPackageScripts(w,'.'):Promise.resolve(null)]); return toolText({workspace:wsPublic(w),depth,tree,git:{status,diffStat},package:scripts}); });
+  server.registerTool('project_snapshot',{title:'Project snapshot',description:'One-call startup context: workspace, compact tree, git status, git diff stat, package scripts, and project instructions when available.',inputSchema:{workspaceId:z.string().optional(),depth:z.number().int().min(0).max(5).optional(),maxResults:z.number().int().min(20).max(1500).optional(),includeScripts:z.boolean().optional(),includeInstructions:z.boolean().optional()}},async({workspaceId,depth=2,maxResults=350,includeScripts=true,includeInstructions=true})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const [status,diffStat,tree,scripts,instructions] = await Promise.all([runGit(w,['status','--short','--branch']), runGit(w,['diff','--stat'],20000,30000), compactTree(w,depth,maxResults), includeScripts?readPackageScripts(w,'.'):Promise.resolve(null), includeInstructions?projectInstructionFiles(w,40,40000):Promise.resolve(null)]); return toolText({workspace:wsPublic(w),depth,tree,git:{status,diffStat},package:scripts,instructions}); });
+  server.registerTool('project_instructions',{title:'Project instructions',description:'Return root AGENTS.md/CLAUDE.md contents and nested instruction file paths for the active workspace.',inputSchema:{workspaceId:z.string().optional(),maxFiles:z.number().int().min(1).max(200).optional(),maxChars:z.number().int().min(1000).max(200000).optional()}},async({workspaceId,maxFiles=80,maxChars=50000})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); return toolText({workspace:wsPublic(w),instructions:await projectInstructionFiles(w,maxFiles,maxChars)}); });
   server.registerTool('list_project_scripts',{title:'List project scripts',description:'Read package.json scripts from the workspace or subpath.',inputSchema:{workspaceId:z.string().optional(),subpath:z.string().optional()}},async({workspaceId,subpath='.'})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); return toolText({workspace:wsPublic(w),...(await readPackageScripts(w,subpath))}); });
   server.registerTool('list_configured_commands',{title:'List configured commands',description:'List trusted commands configured by the VS Code extension.',inputSchema:{}},async()=>{ const cfg=loadConfig(); return toolText({commands:(cfg.commands||[]).map(c=>({key:c.key,label:c.label,readOnly:!!c.readOnly,command:c.command}))}); });
   server.registerTool('detect_validation',{title:'Detect validation checks',description:'Detect the smallest useful validation commands for the active project.',inputSchema:{workspaceId:z.string().optional()}},async({workspaceId})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const checks=await validationPlan(w); return toolText({workspace:wsPublic(w),checks}); });
@@ -366,6 +451,8 @@ function createServer(){
   server.registerTool('git_blame',{title:'Git blame',description:'Run git blame for a file.',inputSchema:{workspaceId:z.string().optional(),path:z.string(),startLine:z.number().int().min(1).optional(),endLine:z.number().int().min(1).optional(),maxOutputChars:z.number().int().min(1000).max(500000).optional()}},async({workspaceId,path:rel,startLine,endLine,maxOutputChars=DEFAULT_MAX_OUTPUT})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const gr=gitRel(w,rel); const args=['blame']; if(startLine||endLine){ if(startLine&&endLine&&startLine>endLine) throw new Error('startLine must be <= endLine'); args.push(`-L`, `${startLine||1},${endLine||''}`); } args.push('--',gr); return toolText({workspace:wsPublic(w),...(await runGit(w,args,maxOutputChars))}); });
   server.registerTool('git_stash',{title:'Git stash',description:'Run git stash actions.',inputSchema:{workspaceId:z.string().optional(),action:z.enum(['push','pop','list','apply','drop']).optional(),message:z.string().optional(),includeUntracked:z.boolean().optional()}},async({workspaceId,action='list',message,includeUntracked=false})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); if(w.reference && action!=='list') throw new Error('Cannot modify reference workspace'); if(action!=='list') assertGitAllowed(cfg,['stash',action],'Git stash'); let args=['stash']; if(action==='push'){ args.push('push'); if(includeUntracked) args.push('-u'); if(message) args.push('-m',message); } else args.push(action); const r=await runGit(w,args,DEFAULT_MAX_OUTPUT,DEFAULT_TIMEOUT_MS); await audit('git_stash',{workspace:w.id,action,exitCode:r.exitCode}); return toolText({workspace:wsPublic(w),...r}); });
   server.registerTool('git_raw',{title:'Git raw',description:'Run arbitrary git args in active workspace, e.g. ["status", "--short"].',inputSchema:{workspaceId:z.string().optional(),args:z.array(z.string()).min(1),maxOutputChars:z.number().int().min(1000).max(500000).optional(),timeoutMs:z.number().int().min(1000).max(1800000).optional()}},async({workspaceId,args,maxOutputChars,timeoutMs})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); if(w.reference) throw new Error('Cannot run git_raw in reference workspace'); assertGitAllowed(cfg,args,'Git raw'); const limits=commandLimits(cfg,timeoutMs,maxOutputChars); const r=await runGit(w,args,limits.maxOutputChars,limits.timeoutMs); await audit('git_raw',{workspace:w.id,args,exitCode:r.exitCode}); return toolText({workspace:wsPublic(w),...r}); });
+
+  server.registerTool('show_changes',{title:'Show changes',description:'Summarize current Git changes with status, diff stat, file totals, and a bounded patch for review.',inputSchema:{workspaceId:z.string().optional(),staged:z.boolean().optional(),maxOutputChars:z.number().int().min(1000).max(300000).optional()}},async({workspaceId,staged=false,maxOutputChars=80000})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); return toolText(await gitChangeReview(w,staged,maxOutputChars)); });
 
   server.registerTool('task_report',{title:'Task report',description:'Summarize current Git status, unstaged/staged diffs, and recent audit entries after a task.',inputSchema:{workspaceId:z.string().optional(),diffChars:z.number().int().min(1000).max(300000).optional(),auditLimit:z.number().int().min(1).max(200).optional()}},async({workspaceId,diffChars=80000,auditLimit=50})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const [status,diff,staged,stagedFiles] = await Promise.all([runGit(w,['status','--short','--branch']),runGit(w,['diff'],diffChars),runGit(w,['diff','--staged'],diffChars),runGit(w,['diff','--staged','--name-status'],20000)]); let auditLines=[]; try{ auditLines=(await fsp.readFile(AUDIT_LOG,'utf8')).trim().split(/\r?\n/).filter(Boolean).slice(-auditLimit).map(x=>{try{return JSON.parse(x)}catch{return {raw:x}}}); }catch{} return toolText({workspace:wsPublic(w),status,diff,staged,stagedFiles,recentAudit:auditLines}); });
 

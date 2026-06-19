@@ -32196,7 +32196,7 @@ var StreamableHTTPServerTransport = class {
 };
 
 // gateway/server.mjs
-var VERSION = "1.6.2";
+var VERSION = "1.7.0";
 var CONFIG_PATH = process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) {
   console.error("AIWG_CONFIG is required");
@@ -32216,6 +32216,9 @@ var HIDDEN_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", ".next", ".da
 var BLOCKED_EXT = /* @__PURE__ */ new Set([".pem", ".key", ".pfx", ".p12", ".db", ".sqlite", ".sqlite3", ".log"]);
 var TEXT_EXT = /* @__PURE__ */ new Set([".md", ".mdx", ".txt", ".json", ".jsonc", ".yaml", ".yml", ".js", ".jsx", ".ts", ".tsx", ".cjs", ".mjs", ".css", ".scss", ".sass", ".less", ".html", ".xml", ".cs", ".csproj", ".sln", ".dart", ".py", ".ps1", ".sh", ".bash", ".zsh", ".sql", ".toml", ".ini", ".config", ".props", ".targets", ".java", ".kt", ".kts", ".go", ".rs", ".php", ".rb", ".swift", ".vue", ".svelte", ".env.example", ".env.sample", ".sample"]);
 var ALLOW_BASENAME = /* @__PURE__ */ new Set(["README", "README.md", "LICENSE", "Dockerfile", "Makefile", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "pubspec.yaml", "pubspec.lock", "global.json", "Directory.Packages.props"]);
+var PROJECT_INSTRUCTION_BASENAMES = /* @__PURE__ */ new Set(["agents.md", "claude.md"]);
+var ROOT_PROJECT_INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md"];
+var PROJECT_INSTRUCTION_SKIP_DIRS = /* @__PURE__ */ new Set([...HIDDEN_DIRS, ".github", ".vscode", ".idea", "tmp"]);
 function readJson(p) {
   return JSON.parse(fs.readFileSync(p, "utf8").replace(/^\uFEFF/, ""));
 }
@@ -32359,6 +32362,7 @@ var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
   "list_diagnostics",
   "workspace_map",
   "project_snapshot",
+  "project_instructions",
   "list_project_scripts",
   "list_configured_commands",
   "detect_validation",
@@ -32370,6 +32374,7 @@ var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
   "git_staged_files",
   "git_log",
   "git_blame",
+  "show_changes",
   "task_report",
   "list_backups",
   "read_audit_log"
@@ -32639,6 +32644,88 @@ async function readPackageScripts(w, subpath = ".") {
     return { path: normalizeSlash(path.relative(w.root, pkgPath)), error: e.message, scripts: {} };
   }
 }
+async function projectInstructionFiles(w, maxFiles = 80, maxChars = 5e4) {
+  maxFiles = clampInt(maxFiles, 80, 1, 200);
+  maxChars = clampInt(maxChars, 5e4, 1e3, 2e5);
+  const loaded = [];
+  const available = [];
+  const seen = /* @__PURE__ */ new Set();
+  let remainingChars = maxChars;
+  for (const rel of ROOT_PROJECT_INSTRUCTION_FILES) {
+    const full = safeResolve(w.root, rel);
+    const st = await fsp.stat(full).catch(() => null);
+    if (!st?.isFile() || !isTextAllowed(rel)) continue;
+    const text = await fsp.readFile(full, "utf8").catch(() => null);
+    if (text == null) continue;
+    const t = truncate(text, remainingChars);
+    loaded.push({ path: rel, length: text.length, truncated: t.truncated, text: t.text });
+    remainingChars = Math.max(0, remainingChars - t.text.length);
+    seen.add(rel.toLowerCase());
+  }
+  async function scan(dir) {
+    if (loaded.length + available.length >= maxFiles) return;
+    let entries = [];
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const e of entries) {
+      if (loaded.length + available.length >= maxFiles) break;
+      const full = path.join(dir, e.name);
+      const rel = normalizeSlash(path.relative(w.root, full));
+      const lowerName = e.name.toLowerCase();
+      if (e.isDirectory()) {
+        if (PROJECT_INSTRUCTION_SKIP_DIRS.has(lowerName)) continue;
+        await scan(full);
+      } else if (e.isFile() && PROJECT_INSTRUCTION_BASENAMES.has(lowerName) && !seen.has(rel.toLowerCase()) && isTextAllowed(rel)) {
+        const st = await fsp.stat(full).catch(() => null);
+        available.push({ path: rel, size: st?.size || 0 });
+        seen.add(rel.toLowerCase());
+      }
+    }
+  }
+  await scan(w.root);
+  return { loaded, available, total: loaded.length + available.length, truncated: loaded.length + available.length >= maxFiles };
+}
+function parseNumstat(stdout = "") {
+  const files = [];
+  for (const line of String(stdout || "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const parts = line.split("	");
+    if (parts.length < 3) continue;
+    const [add, remove, ...rest] = parts;
+    files.push({
+      path: rest.join("	"),
+      additions: add === "-" ? null : Number(add) || 0,
+      removals: remove === "-" ? null : Number(remove) || 0
+    });
+  }
+  return files;
+}
+function changeSummary(files = []) {
+  let additions = 0;
+  let removals = 0;
+  let binaryFiles = 0;
+  for (const f of files) {
+    if (typeof f.additions === "number") additions += f.additions;
+    else binaryFiles++;
+    if (typeof f.removals === "number") removals += f.removals;
+  }
+  return { filesChanged: files.length, additions, removals, binaryFiles };
+}
+async function gitChangeReview(w, staged = false, maxOutputChars = 8e4) {
+  const diffArgs = staged ? ["diff", "--staged"] : ["diff"];
+  const [status, diffStat, numstat, patch] = await Promise.all([
+    runGit(w, ["status", "--short", "--branch"], 2e4),
+    runGit(w, [...diffArgs, "--stat"], 2e4),
+    runGit(w, [...diffArgs, "--numstat"], 5e4),
+    runGit(w, diffArgs, maxOutputChars)
+  ]);
+  const files = parseNumstat(numstat.stdout);
+  return { workspace: wsPublic(w), staged, status, diffStat, summary: changeSummary(files), files, patch };
+}
 async function compactTree(w, depth = 2, maxResults = 350) {
   const items = [];
   await walk(w.root, w.root, depth, maxResults, items);
@@ -32821,11 +32908,16 @@ function createServer() {
     await walk(w.root, w.root, depth, maxResults, items);
     return toolText({ workspace: wsPublic(w), depth, items });
   });
-  server.registerTool("project_snapshot", { title: "Project snapshot", description: "One-call startup context: workspace, compact tree, git status, git diff stat, and package scripts when available.", inputSchema: { workspaceId: external_exports.string().optional(), depth: external_exports.number().int().min(0).max(5).optional(), maxResults: external_exports.number().int().min(20).max(1500).optional(), includeScripts: external_exports.boolean().optional() } }, async ({ workspaceId, depth = 2, maxResults = 350, includeScripts = true }) => {
+  server.registerTool("project_snapshot", { title: "Project snapshot", description: "One-call startup context: workspace, compact tree, git status, git diff stat, package scripts, and project instructions when available.", inputSchema: { workspaceId: external_exports.string().optional(), depth: external_exports.number().int().min(0).max(5).optional(), maxResults: external_exports.number().int().min(20).max(1500).optional(), includeScripts: external_exports.boolean().optional(), includeInstructions: external_exports.boolean().optional() } }, async ({ workspaceId, depth = 2, maxResults = 350, includeScripts = true, includeInstructions = true }) => {
     const cfg = loadConfig();
     const w = getWs(cfg, workspaceId);
-    const [status, diffStat, tree, scripts] = await Promise.all([runGit(w, ["status", "--short", "--branch"]), runGit(w, ["diff", "--stat"], 2e4, 3e4), compactTree(w, depth, maxResults), includeScripts ? readPackageScripts(w, ".") : Promise.resolve(null)]);
-    return toolText({ workspace: wsPublic(w), depth, tree, git: { status, diffStat }, package: scripts });
+    const [status, diffStat, tree, scripts, instructions] = await Promise.all([runGit(w, ["status", "--short", "--branch"]), runGit(w, ["diff", "--stat"], 2e4, 3e4), compactTree(w, depth, maxResults), includeScripts ? readPackageScripts(w, ".") : Promise.resolve(null), includeInstructions ? projectInstructionFiles(w, 40, 4e4) : Promise.resolve(null)]);
+    return toolText({ workspace: wsPublic(w), depth, tree, git: { status, diffStat }, package: scripts, instructions });
+  });
+  server.registerTool("project_instructions", { title: "Project instructions", description: "Return root AGENTS.md/CLAUDE.md contents and nested instruction file paths for the active workspace.", inputSchema: { workspaceId: external_exports.string().optional(), maxFiles: external_exports.number().int().min(1).max(200).optional(), maxChars: external_exports.number().int().min(1e3).max(2e5).optional() } }, async ({ workspaceId, maxFiles = 80, maxChars = 5e4 }) => {
+    const cfg = loadConfig();
+    const w = getWs(cfg, workspaceId);
+    return toolText({ workspace: wsPublic(w), instructions: await projectInstructionFiles(w, maxFiles, maxChars) });
   });
   server.registerTool("list_project_scripts", { title: "List project scripts", description: "Read package.json scripts from the workspace or subpath.", inputSchema: { workspaceId: external_exports.string().optional(), subpath: external_exports.string().optional() } }, async ({ workspaceId, subpath = "." }) => {
     const cfg = loadConfig();
@@ -33226,6 +33318,11 @@ function createServer() {
     const r = await runGit(w, args, limits.maxOutputChars, limits.timeoutMs);
     await audit("git_raw", { workspace: w.id, args, exitCode: r.exitCode });
     return toolText({ workspace: wsPublic(w), ...r });
+  });
+  server.registerTool("show_changes", { title: "Show changes", description: "Summarize current Git changes with status, diff stat, file totals, and a bounded patch for review.", inputSchema: { workspaceId: external_exports.string().optional(), staged: external_exports.boolean().optional(), maxOutputChars: external_exports.number().int().min(1e3).max(3e5).optional() } }, async ({ workspaceId, staged = false, maxOutputChars = 8e4 }) => {
+    const cfg = loadConfig();
+    const w = getWs(cfg, workspaceId);
+    return toolText(await gitChangeReview(w, staged, maxOutputChars));
   });
   server.registerTool("task_report", { title: "Task report", description: "Summarize current Git status, unstaged/staged diffs, and recent audit entries after a task.", inputSchema: { workspaceId: external_exports.string().optional(), diffChars: external_exports.number().int().min(1e3).max(3e5).optional(), auditLimit: external_exports.number().int().min(1).max(200).optional() } }, async ({ workspaceId, diffChars = 8e4, auditLimit = 50 }) => {
     const cfg = loadConfig();

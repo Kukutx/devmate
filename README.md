@@ -11,10 +11,12 @@ Daily flow:
 
 Core abilities:
 
+- Read project instructions from `AGENTS.md` / `CLAUDE.md`.
 - Read, search, write, create, delete, move, and patch files.
 - Run project commands.
 - Use Git: status, diff, add, commit, push, pull, branch, switch, log, blame, stash.
 - Add readonly reference projects.
+- Review current changes with bounded Git summaries.
 - Keep automatic backups and audit logs in VS Code global storage, not in your project.
 
 Safety defaults:
@@ -38,4 +40,4 @@ npm run smoke:gateway
 npm run package:vsix
 ```
 
-See `docs/MCP_TOOLS.md` for the MCP tool list and `SECURITY.md` for the local gateway security model.
+See `docs/MCP_TOOLS.md` for the MCP tool list, `docs/TROUBLESHOOTING.md` for ChatGPT Connector setup issues, and `SECURITY.md` for the local gateway security model.

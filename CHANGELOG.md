@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.0
+
+- Added `project_instructions` and included root `AGENTS.md` / `CLAUDE.md` context in `project_snapshot`.
+- Added `show_changes` for compact Git status, diff stats, file totals, and bounded patch review.
+- Added project agent instructions and ChatGPT Connector troubleshooting docs.
+- Added GitHub Actions CI for repeatable check, smoke, and VSIX package verification.
+
 ## 1.6.2
 
 - Added the DevMate extension icon with a white background.

@@ -12,7 +12,7 @@ const gatewayScript = process.env.DEVMATE_GATEWAY_SCRIPT || (fs.existsSync(bundl
 
 const config = {
   version: 5,
-  appVersion: '1.6.2',
+  appVersion: '1.7.0',
   instanceId: `smoke-${Date.now()}`,
   server: { port, mcpPath: '/mcp' },
   runtime: { defaultCommandTimeoutMs: 30000, maxOutputChars: 80000 },
@@ -121,7 +121,7 @@ try {
   const init = await rpc('initialize', {
     protocolVersion: '2025-03-26',
     capabilities: {},
-    clientInfo: { name: 'devmate-smoke', version: '1.6.2' }
+    clientInfo: { name: 'devmate-smoke', version: '1.7.0' }
   });
   assert(init.response.ok && init.json?.result?.serverInfo?.name === 'devmate', `initialize failed: ${init.text}`);
 
@@ -134,12 +134,20 @@ try {
   assert(toolByName.get('write_file')?.annotations?.destructiveHint === true, 'write_file is missing destructiveHint');
   assert(toolByName.get('delete_file')?.annotations?.destructiveHint === true, 'delete_file is missing destructiveHint');
   assert(toolByName.get('run_command')?.annotations?.openWorldHint === true, 'run_command is missing openWorldHint');
+  assert(toolByName.get('project_instructions')?.annotations?.readOnlyHint === true, 'project_instructions is missing readOnlyHint');
+  assert(toolByName.get('show_changes')?.annotations?.readOnlyHint === true, 'show_changes is missing readOnlyHint');
 
   const status = await rpc('tools/call', { name: 'gateway_status', arguments: {} });
   assert(status.response.ok && status.text.includes('fullAccess'), `gateway_status did not report fullAccess: ${status.text}`);
 
   const vscodeContext = await rpc('tools/call', { name: 'vscode_context', arguments: {} });
   assert(vscodeContext.response.ok && vscodeContext.text.includes('README.md'), `vscode_context failed: ${vscodeContext.text}`);
+
+  const projectInstructions = await rpc('tools/call', { name: 'project_instructions', arguments: {} });
+  assert(projectInstructions.response.ok && projectInstructions.text.includes('AGENTS.md'), `project_instructions failed: ${projectInstructions.text}`);
+
+  const changes = await rpc('tools/call', { name: 'show_changes', arguments: { maxOutputChars: 5000 } });
+  assert(changes.response.ok && changes.text.includes('filesChanged'), `show_changes failed: ${changes.text}`);
 
   const validation = await rpc('tools/call', { name: 'detect_validation', arguments: {} });
   assert(validation.response.ok && validation.text.includes('package:check'), `detect_validation failed: ${validation.text}`);

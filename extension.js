@@ -7,7 +7,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
-const VERSION = '1.6.2';
+const VERSION = '1.7.0';
 const BASE_PORT = 8787;
 const MCP_PATH = '/mcp';
 let gatewayProcess = null;

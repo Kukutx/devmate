@@ -16,8 +16,11 @@ DevMate exposes development tools over MCP after `DevMate: Start` verifies the p
 - `list_diagnostics`
 - `workspace_map`
 - `project_snapshot`
+- `project_instructions`
 - `list_files`
 - `search_text`
+
+`project_snapshot` includes root project instructions by default. `project_instructions` reads root `AGENTS.md` / `CLAUDE.md` and lists nested instruction files so ChatGPT can follow project-specific rules.
 
 ## File Operations
 
@@ -70,6 +73,7 @@ Reference workspaces cannot mutate Git state. Set `devMate.confirmBeforePush` to
 
 ## Reporting
 
+- `show_changes`
 - `task_report`
 
-Use `task_report` after edits to collect status, diffs, staged changes, and recent audit entries.
+Use `show_changes` for compact status, diff stats, file totals, and a bounded patch. Use `task_report` after edits when you also need staged changes and recent audit entries.
