@@ -50,7 +50,7 @@ DevMate uses the active VS Code folder as the writable workspace by default. Ope
 
 ## Reference Project Management
 
-Use the DevMate panel to add readonly reference folders, paste a GitHub repository URL, remove a single reference, clear all references, or edit the References JSON directly. Removing a reference only updates DevMate configuration; it does not delete the original folder or the cached GitHub clone.
+Use the DevMate panel to add readonly reference folders, paste a GitHub repository URL, add from clipboard, add extra VS Code workspace folders, remove a single reference, clear all references, or edit the Advanced References JSON directly. Removing a reference only updates DevMate configuration; it does not delete the original folder or the cached GitHub clone.
 
 GitHub references require `git` on PATH and network access. If a GitHub reference fails, open `DevMate: Logs` and check the clone or pull error.
 

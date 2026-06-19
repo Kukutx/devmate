@@ -7,7 +7,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
-const VERSION = '1.10.0';
+const VERSION = '1.11.0';
 const BASE_PORT = 8787;
 const MCP_PATH = '/mcp';
 let gatewayProcess = null;
@@ -583,6 +583,33 @@ async function addReferenceInput(ctx, value){
     vscode.window.showErrorMessage(`Reference add failed: ${e.message || e}`);
   }
 }
+async function addReferenceFromClipboard(ctx){
+  const text = await vscode.env.clipboard.readText();
+  await addReferenceInput(ctx, text);
+}
+async function addOpenFolderReferences(ctx){
+  const folders = vscode.workspace.workspaceFolders || [];
+  const activeRoot = currentRoot();
+  const roots = folders.map(f => f.uri.fsPath).filter(root => root && !samePath(root, activeRoot));
+  if(!roots.length) return vscode.window.showInformationMessage('No extra VS Code workspace folders to add as references.');
+  let added = 0;
+  const failed = [];
+  for(const root of roots){
+    try{
+      addReferenceWorkspace(ctx, root, path.basename(root), makeId(root));
+      added++;
+    }catch(e){
+      failed.push(`${root}: ${e.message || e}`);
+    }
+  }
+  if(failed.length){
+    output.show(true);
+    failed.forEach(item => log(`Open folder reference skipped: ${item}`));
+    vscode.window.showWarningMessage(`Added ${added} reference(s), skipped ${failed.length}. See DevMate logs.`);
+  } else {
+    vscode.window.showInformationMessage(`Added ${added} open folder reference(s).`);
+  }
+}
 async function addReference(ctx){
   const uris = await vscode.window.showOpenDialog({canSelectFolders:true,canSelectFiles:false,canSelectMany:false,openLabel:'Add readonly reference project'});
   if(!uris?.[0]) return;
@@ -690,31 +717,81 @@ function panelHtml(ctx, webview){
   const references = (data.workspaces || []).filter(w => w.reference);
   const referenceJson = JSON.stringify(references.map(w => ({id:w.id,name:w.name,root:w.root})), null, 2);
   const referenceList = references.length
-    ? references.map(w => `<div style="display:flex; align-items:center; gap:8px; margin:4px 0;"><button data-cmd="removeReference" data-id="${esc(w.id)}">Remove</button><code>${esc(w.name || w.id)}</code><span style="opacity:.75">${esc(w.root || '')}</span></div>`).join('')
-    : '<p style="opacity:.75">No readonly reference projects.</p>';
+    ? references.map(w => `<div class="ref-row"><div class="ref-main"><strong>${esc(w.name || w.id)}</strong><code>${esc(w.root || '')}</code></div><button class="secondary danger" data-cmd="removeReference" data-id="${esc(w.id)}">Remove</button></div>`).join('')
+    : '<p class="muted">No readonly reference projects yet.</p>';
   return `<!doctype html><html><head>
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${n}';">
-  </head><body style="font-family: var(--vscode-font-family); padding:16px;">
+  <style>
+    body{font-family:var(--vscode-font-family); color:var(--vscode-foreground); background:var(--vscode-editor-background); padding:20px; line-height:1.45;}
+    h2{margin:0 0 12px; font-size:24px;}
+    h3{margin:22px 0 8px; font-size:16px;}
+    code{font-family:var(--vscode-editor-font-family); background:var(--vscode-textCodeBlock-background); padding:2px 4px; border-radius:4px;}
+    button{border:1px solid var(--vscode-button-border, transparent); background:var(--vscode-button-background); color:var(--vscode-button-foreground); padding:5px 10px; border-radius:4px; cursor:pointer;}
+    button:hover{background:var(--vscode-button-hoverBackground);}
+    button.secondary{background:var(--vscode-button-secondaryBackground); color:var(--vscode-button-secondaryForeground);}
+    button.secondary:hover{background:var(--vscode-button-secondaryHoverBackground);}
+    button.danger{border-color:var(--vscode-inputValidation-errorBorder);}
+    input,textarea{box-sizing:border-box; border:1px solid var(--vscode-input-border); background:var(--vscode-input-background); color:var(--vscode-input-foreground); border-radius:4px; padding:6px 8px;}
+    textarea{width:100%; font-family:var(--vscode-editor-font-family); resize:vertical;}
+    details{margin-top:14px; border-top:1px solid var(--vscode-panel-border); padding-top:12px;}
+    summary{cursor:pointer; font-weight:600;}
+    .muted{color:var(--vscode-descriptionForeground);}
+    .section{border-top:1px solid var(--vscode-panel-border); padding-top:14px; margin-top:16px;}
+    .toolbar{display:flex; flex-wrap:wrap; gap:8px; margin:10px 0;}
+    .status-grid{display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 12px; max-width:980px;}
+    .input-row{display:flex; gap:8px; align-items:center; max-width:980px;}
+    .input-row input{flex:1; min-width:220px;}
+    .ref-list{max-width:980px; margin-top:10px;}
+    .ref-row{display:flex; align-items:center; justify-content:space-between; gap:12px; border-top:1px solid var(--vscode-panel-border); padding:9px 0;}
+    .ref-main{min-width:0; display:flex; flex-direction:column; gap:4px;}
+    .ref-main code{display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .flow{margin-top:18px;}
+  </style>
+  </head><body>
   <h2>DevMate ${VERSION}</h2>
-  <p><b>Active project:</b><br><code>${esc(root || 'Open a VS Code folder first')}</code></p>
-  <p><b>MCP:</b> <code>${esc(mcpDisplay)}</code><br><b>Local:</b> <code>127.0.0.1:${esc(data.server.port)}/mcp</code><br><b>Auth:</b> <code>${esc(data.auth?.required ? 'token required' : 'disabled')}</code><br><b>Permissions:</b> <code>${esc(data.permissions?.profile || 'fullAccess')}</code><br><b>Last preflight:</b> <code>${esc(data.connection?.lastPreflightAt ? `${data.connection.lastPreflightAt} ${data.connection.lastPublicHost || ''}` : 'not recorded')}</code><br><b>Retention:</b> <code>${esc(data.maintenance?.backupRetentionDays || 30)}d backups / ${esc(data.maintenance?.auditRetentionDays || 30)}d audit</code><br><b>Start command:</b> <code>${esc(startCommandProcess ? 'running' : (String(cfg().get('defaultStartCommand') || '').trim() || 'not configured'))}</code></p>
-  <p><button data-cmd="quickStart">Start</button>
-  <button data-cmd="copyUrl">Copy URL</button>
-  <button data-cmd="stop">Stop</button>
-  <button data-cmd="doctor">Doctor</button></p>
-  <p><button data-cmd="addReference">Browse Reference</button>
-  <button data-cmd="starter">Copy Prompt</button>
-  <button data-cmd="settings">Settings</button>
-  <button data-cmd="logs">Logs</button></p>
-  <h3>References</h3>
-  <p><input id="referenceInput" style="width:min(720px, 100%);" placeholder="Folder path or https://github.com/owner/repo">
-  <button data-cmd="addReferenceInput">Add Path / GitHub</button>
-  <button data-cmd="clearReferences">Clear All</button></p>
-  ${referenceList}
-  <p><textarea id="referencesJson" rows="10" style="width:min(920px, 100%); font-family: var(--vscode-editor-font-family);">${esc(referenceJson)}</textarea></p>
-  <p><button data-cmd="saveReferencesJson">Save References JSON</button></p>
-  <h3>Workspaces</h3><pre>${esc(JSON.stringify(data.workspaces.map(w=>({id:w.id,name:w.name,role:w.role,mode:w.mode,root:w.root})),null,2))}</pre>
-  <p>Daily flow: open project → <b>Start</b> → paste URL into ChatGPT App → say “使用 DevMate，完成这个开发任务”。</p>
+  <div class="status-grid">
+    <b>Active project</b><code>${esc(root || 'Open a VS Code folder first')}</code>
+    <b>MCP</b><code>${esc(mcpDisplay)}</code>
+    <b>Local</b><code>127.0.0.1:${esc(data.server.port)}/mcp</code>
+    <b>Auth</b><code>${esc(data.auth?.required ? 'token required' : 'disabled')}</code>
+    <b>Permissions</b><code>${esc(data.permissions?.profile || 'fullAccess')}</code>
+    <b>Last preflight</b><code>${esc(data.connection?.lastPreflightAt ? `${data.connection.lastPreflightAt} ${data.connection.lastPublicHost || ''}` : 'not recorded')}</code>
+    <b>Start command</b><code>${esc(startCommandProcess ? 'running' : (String(cfg().get('defaultStartCommand') || '').trim() || 'not configured'))}</code>
+  </div>
+  <div class="toolbar">
+    <button data-cmd="quickStart">Start</button>
+    <button data-cmd="copyUrl">Copy URL</button>
+    <button class="secondary" data-cmd="stop">Stop</button>
+    <button class="secondary" data-cmd="doctor">Doctor</button>
+    <button class="secondary" data-cmd="starter">Copy Prompt</button>
+    <button class="secondary" data-cmd="settings">Settings</button>
+    <button class="secondary" data-cmd="logs">Logs</button>
+  </div>
+  <div class="section">
+    <h3>References</h3>
+    <div class="input-row">
+      <input id="referenceInput" placeholder="Folder path or https://github.com/owner/repo">
+      <button data-cmd="addReferenceInput">Add</button>
+      <button class="secondary" data-cmd="addReferenceClipboard">From Clipboard</button>
+      <button class="secondary" data-cmd="addReference">Browse</button>
+      <button class="secondary" data-cmd="addOpenFolders">Open Folders</button>
+    </div>
+    <div class="ref-list">${referenceList}</div>
+    <details>
+      <summary>Advanced reference editing</summary>
+      <p class="muted">Edit references as JSON only when bulk changes are faster than the buttons above.</p>
+      <textarea id="referencesJson" rows="9">${esc(referenceJson)}</textarea>
+      <div class="toolbar">
+        <button data-cmd="saveReferencesJson">Save JSON</button>
+        <button class="secondary danger" data-cmd="clearReferences">Clear All References</button>
+      </div>
+    </details>
+  </div>
+  <details>
+    <summary>Workspace JSON</summary>
+    <pre>${esc(JSON.stringify(data.workspaces.map(w=>({id:w.id,name:w.name,role:w.role,mode:w.mode,root:w.root})),null,2))}</pre>
+  </details>
+  <p class="flow muted">Daily flow: open project -> <b>Start</b> -> paste URL into ChatGPT App -> say “使用 DevMate，完成这个开发任务”。</p>
   <script nonce="${n}">
   const vscode=acquireVsCodeApi();
   document.addEventListener('click', event => {
@@ -743,6 +820,8 @@ function openPanel(ctx){
     if(m.cmd==='doctor') await doctor(ctx);
     if(m.cmd==='addReference') await addReference(ctx);
     if(m.cmd==='addReferenceInput') await addReferenceInput(ctx, m.value);
+    if(m.cmd==='addReferenceClipboard') await addReferenceFromClipboard(ctx);
+    if(m.cmd==='addOpenFolders') await addOpenFolderReferences(ctx);
     if(m.cmd==='removeReference') await removeReference(ctx, m.id);
     if(m.cmd==='saveReferencesJson') await saveReferencesJson(ctx, m.value);
     if(m.cmd==='clearReferences') await clearReferences(ctx);
@@ -754,6 +833,8 @@ function openPanel(ctx){
 }
 
 async function clearReferences(ctx){
+  const confirm = await vscode.window.showWarningMessage('Clear all reference projects from DevMate config?', {modal:true}, 'Clear References');
+  if(confirm !== 'Clear References') return;
   const data = ensureConfig(ctx,false);
   data.workspaces = (data.workspaces || []).filter(w => !w.reference);
   normalizeWorkspaceRoles(data);

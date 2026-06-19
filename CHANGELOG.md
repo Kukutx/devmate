@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.11.0
+
+- Simplified the DevMate reference workflow with a clearer panel layout.
+- Added one-click reference import from clipboard.
+- Added one-click import for extra VS Code workspace folders as readonly references.
+- Moved raw JSON editing and clear-all into an advanced section.
+
 ## 1.10.0
 
 - Added panel controls for adding references from a local path or GitHub repository URL.
