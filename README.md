@@ -15,7 +15,7 @@ Core abilities:
 - Read, search, write, create, delete, move, and patch files.
 - Run project commands.
 - Use Git: status, diff, add, commit, push, pull, branch, switch, log, blame, stash.
-- Add readonly reference projects.
+- Add, remove, and edit readonly reference projects, including GitHub repository URLs.
 - Review current changes with bounded Git summaries.
 - Show a ChatGPT Apps status panel for connection, VS Code context, diagnostics, and permissions.
 - Keep automatic backups and audit logs in VS Code global storage, not in your project.

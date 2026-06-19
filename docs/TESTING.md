@@ -32,5 +32,9 @@ Manual acceptance:
 18. Run `maintenance_status` and confirm backup/audit retention settings are present.
 19. Run `connection_diagnostics` and confirm it reports gateway reachability, VS Code context freshness, diagnostics, and last public preflight.
 20. Run `devmate_status_panel` in ChatGPT and confirm the Apps UI card renders without exposing the token URL.
+21. In the DevMate panel, add a readonly reference with the folder picker, remove that single reference, and confirm the source folder is not deleted.
+22. In the DevMate panel, paste a local folder path into the reference input and confirm it appears in `list_workspaces` as `readonly`.
+23. Edit the References JSON textarea, save it, and confirm invalid JSON or a missing folder shows an error instead of changing workspaces.
+24. Optional network check: paste a public GitHub repository URL and confirm DevMate clones or updates it under VS Code global storage as a readonly reference.
 
 Known external dependency: ngrok must be installed and authenticated.

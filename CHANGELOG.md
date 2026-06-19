@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.0
+
+- Added panel controls for adding references from a local path or GitHub repository URL.
+- Added per-reference remove, clear-all, and editable References JSON management.
+- Stored GitHub reference clones under VS Code global storage and kept them readonly for MCP tools.
+- Normalized workspace roles so only the current VS Code folder is marked active.
+
 ## 1.9.0
 
 - Added `connection_diagnostics` for checking ChatGPT-to-DevMate reachability, VS Code context freshness, workspace state, diagnostics, permissions, and recent public MCP preflight snapshots.

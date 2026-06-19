@@ -10,8 +10,9 @@ State is stored under VS Code global storage:
 - `config.json`
 - `state/backups/`
 - `state/audit.jsonl`
+- `references/github/`
 
-The current VS Code folder is the default writable workspace. Reference projects are added as readonly workspaces.
+The current VS Code folder is the default writable workspace. Reference projects are added as readonly workspaces. GitHub reference URLs are cloned or fast-forward updated under `references/github/`; removing a reference from DevMate only removes it from `config.json` and does not delete local source folders.
 
 VS Code editor context is captured by `extension.js` into `config.json` as a lightweight snapshot. The gateway reads that snapshot through MCP tools; it does not call VS Code APIs directly.
 

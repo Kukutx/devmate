@@ -48,6 +48,12 @@ Switching models or reasoning modes can leave the current chat without the conne
 
 DevMate uses the active VS Code folder as the writable workspace by default. Open the intended folder in VS Code, then run `DevMate: Start` again. Use `list_workspaces` or `gateway_status` from ChatGPT to verify the active workspace.
 
+## Reference Project Management
+
+Use the DevMate panel to add readonly reference folders, paste a GitHub repository URL, remove a single reference, clear all references, or edit the References JSON directly. Removing a reference only updates DevMate configuration; it does not delete the original folder or the cached GitHub clone.
+
+GitHub references require `git` on PATH and network access. If a GitHub reference fails, open `DevMate: Logs` and check the clone or pull error.
+
 ## Model Ignores Project Rules
 
 Put project rules in root `AGENTS.md` or `CLAUDE.md`. DevMate exposes them through `project_instructions` and includes them in `project_snapshot`.

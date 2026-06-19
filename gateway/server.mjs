@@ -10,7 +10,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import { DEFAULT_MAINTENANCE, maintenanceOptions, pruneState, stateSummary } from './maintenance.mjs';
 
-const VERSION = '1.9.0';
+const VERSION = '1.10.0';
 const CONFIG_PATH = process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) { console.error('AIWG_CONFIG is required'); process.exit(1); }
 const CONFIG_DIR = path.dirname(CONFIG_PATH);

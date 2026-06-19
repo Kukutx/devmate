@@ -7,7 +7,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
-const VERSION = '1.9.0';
+const VERSION = '1.10.0';
 const BASE_PORT = 8787;
 const MCP_PATH = '/mcp';
 let gatewayProcess = null;
@@ -36,6 +36,32 @@ function currentRoot(){ return vscode.workspace.workspaceFolders?.[0]?.uri.fsPat
 function readJson(p){ try { return JSON.parse(fs.readFileSync(p,'utf8').replace(/^\uFEFF/,'')); } catch { return null; } }
 function writeJson(p,data){ ensureDir(path.dirname(p)); fs.writeFileSync(p, JSON.stringify(data,null,2)+'\n','utf8'); }
 function makeId(root){ return path.basename(root).replace(/[^a-zA-Z0-9_-]+/g,'-').toLowerCase() || 'workspace'; }
+function pathKey(p){ const resolved = path.resolve(p); return process.platform === 'win32' ? resolved.toLowerCase() : resolved; }
+function samePath(a,b){ return !!a && !!b && pathKey(a) === pathKey(b); }
+function uniqueWorkspaceId(workspaces, base, currentId=''){
+  const cleanBase = String(base || 'workspace').replace(/[^a-zA-Z0-9_-]+/g,'-').toLowerCase() || 'workspace';
+  if(currentId && !workspaces.some(w => w.id === currentId)) return currentId;
+  let id = cleanBase;
+  let n = 2;
+  while(workspaces.some(w => w.id === id && id !== currentId)) id = `${cleanBase}-${n++}`;
+  return id;
+}
+function normalizeWorkspaceRoles(data){
+  data.workspaces ||= [];
+  for(const w of data.workspaces){
+    if(w.reference){
+      w.mode = 'readonly';
+      w.role = 'reference';
+    } else if(w.id === data.activeWorkspaceId){
+      w.mode = 'workspace-write';
+      w.role = 'active';
+    } else {
+      w.mode ||= 'workspace-write';
+      w.role = 'workspace';
+      w.reference = false;
+    }
+  }
+}
 function newAuthToken(){ return crypto.randomBytes(32).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 function nonce(){ return crypto.randomBytes(16).toString('base64'); }
 function authRequired(){ return cfg().get('requireAuthToken') !== false; }
@@ -142,7 +168,7 @@ function mcpUrlFor(baseUrl, ctx){
 function defaultConfig(ctx){
   const root = currentRoot();
   return {
-    version: 7,
+    version: 8,
     appVersion: VERSION,
     instanceId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`,
     server: { port: configuredPort(), mcpPath: MCP_PATH },
@@ -171,7 +197,7 @@ function defaultConfig(ctx){
 function ensureConfig(ctx, forceCurrent=false, portOverride=null){
   const p = configPath(ctx);
   let data = readJson(p) || defaultConfig(ctx);
-  data.version = 7;
+  data.version = 8;
   data.appVersion = VERSION;
   data.instanceId ||= `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
   data.server ||= {};
@@ -196,14 +222,15 @@ function ensureConfig(ctx, forceCurrent=false, portOverride=null){
   data.commands ||= [];
   const root = currentRoot();
   if(root && (forceCurrent || cfg().get('autoUseCurrentWorkspace'))){
-    const id = makeId(root);
-    const existing = data.workspaces.find(w => w.id === id || path.resolve(w.root||'') === path.resolve(root));
+    const existing = data.workspaces.find(w => samePath(w.root, root));
     if(existing){
       existing.root = root; existing.name = path.basename(root); existing.mode = 'workspace-write'; existing.reference = false; existing.role = 'active'; data.activeWorkspaceId = existing.id;
     } else {
+      const id = uniqueWorkspaceId(data.workspaces, makeId(root));
       data.workspaces.unshift({id, name:path.basename(root), root, mode:'workspace-write', reference:false, role:'active'}); data.activeWorkspaceId = id;
     }
   }
+  normalizeWorkspaceRoles(data);
   writeJson(p,data);
   selectedPort = Number(data.server.port || configuredPort() || BASE_PORT);
   return data;
@@ -451,11 +478,179 @@ async function copyStarterPrompt(){
   const text = '使用 DevMate，完成这个开发任务。需要时可以读取、搜索、修改文件、运行命令和使用 Git；完成后用 task_report 总结结果。';
   await vscode.env.clipboard.writeText(text); vscode.window.showInformationMessage('Starter prompt copied.');
 }
+function parseGithubRepo(input){
+  const text = String(input || '').trim();
+  let match = text.match(/^https?:\/\/github\.com\/([^\/\s]+)\/([^\/\s#?]+?)(?:\.git)?(?:[\/#?].*)?$/i);
+  if(!match) match = text.match(/^git@github\.com:([^\/\s]+)\/([^\/\s]+?)(?:\.git)?$/i);
+  if(!match) return null;
+  const owner = match[1].replace(/[^a-zA-Z0-9_.-]/g,'');
+  const repo = match[2].replace(/[^a-zA-Z0-9_.-]/g,'');
+  if(!owner || !repo) return null;
+  return {
+    owner,
+    repo,
+    name: `${owner}/${repo}`,
+    idBase: `github-${owner}-${repo}`,
+    cloneUrl: `https://github.com/${owner}/${repo}.git`,
+    dirName: `${owner}__${repo}`.replace(/[^a-zA-Z0-9_.-]/g,'-')
+  };
+}
+function runGit(args, cwd, timeoutMs=180000){
+  return new Promise(resolve=>{
+    const child = spawn('git', args, { cwd, windowsHide:true });
+    let stdout='', stderr='', done=false;
+    const timer = setTimeout(()=>{
+      if(done) return;
+      done = true;
+      try{ child.kill(); }catch{}
+      resolve({exitCode:null,timedOut:true,stdout,stderr});
+    }, timeoutMs);
+    child.stdout?.on('data', d=>{ stdout += d.toString(); });
+    child.stderr?.on('data', d=>{ stderr += d.toString(); });
+    child.on('error', e=>{
+      if(done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve({exitCode:null,error:e.message,stdout,stderr});
+    });
+    child.on('close', code=>{
+      if(done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve({exitCode:code,timedOut:false,stdout,stderr});
+    });
+  });
+}
+function addReferenceWorkspace(ctx, root, name, idBase){
+  const data = ensureConfig(ctx,false);
+  const resolved = path.resolve(root);
+  if(!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) throw new Error(`Reference path is not a directory: ${resolved}`);
+  if(data.workspaces.some(w => !w.reference && samePath(w.root, resolved))) throw new Error(`Reference path is already a writable workspace: ${resolved}`);
+  const existing = data.workspaces.find(w => w.reference && samePath(w.root, resolved));
+  if(existing){
+    existing.name = name || path.basename(resolved);
+    existing.root = resolved;
+    existing.mode = 'readonly';
+    existing.reference = true;
+    existing.role = 'reference';
+  } else {
+    const id = uniqueWorkspaceId(data.workspaces, idBase || makeId(resolved));
+    data.workspaces.push({id,name:name || path.basename(resolved),root:resolved,mode:'readonly',reference:true,role:'reference'});
+  }
+  normalizeWorkspaceRoles(data);
+  writeJson(configPath(ctx), data);
+  refreshPanel();
+  return resolved;
+}
+async function addGithubReference(ctx, github){
+  const baseDir = path.join(ctx.globalStorageUri.fsPath, 'references', 'github');
+  ensureDir(baseDir);
+  const target = path.join(baseDir, github.dirName);
+  let result;
+  if(fs.existsSync(path.join(target,'.git'))){
+    log(`Updating GitHub reference ${github.name} in ${target}`);
+    result = await runGit(['pull','--ff-only'], target);
+  } else {
+    if(fs.existsSync(target) && fs.readdirSync(target).length > 0) throw new Error(`GitHub reference target exists but is not a Git repository: ${target}`);
+    log(`Cloning GitHub reference ${github.name} into ${target}`);
+    result = await runGit(['clone','--depth','1',github.cloneUrl,target], baseDir);
+  }
+  if(result.exitCode !== 0) throw new Error(`git ${result.timedOut ? 'timed out' : 'failed'}: ${(result.stderr || result.error || result.stdout || '').trim()}`);
+  addReferenceWorkspace(ctx, target, github.name, github.idBase);
+  return target;
+}
+async function addReferenceInput(ctx, value){
+  const input = String(value || '').trim().replace(/^["']|["']$/g,'');
+  if(!input) return vscode.window.showWarningMessage('Enter a folder path or GitHub repository URL.');
+  const github = parseGithubRepo(input);
+  if(github){
+    output.show(true);
+    try{
+      const target = await addGithubReference(ctx, github);
+      vscode.window.showInformationMessage(`GitHub reference ready: ${github.name}`);
+      log(`GitHub reference ready: ${target}`);
+    }catch(e){
+      log(`GitHub reference failed: ${e.stack || e.message || e}`);
+      vscode.window.showErrorMessage(`GitHub reference failed: ${e.message || e}`);
+    }
+    return;
+  }
+  try{
+    const root = path.isAbsolute(input) ? input : path.resolve(currentRoot() || process.cwd(), input);
+    const resolved = addReferenceWorkspace(ctx, root, path.basename(root), makeId(root));
+    vscode.window.showInformationMessage(`Reference added: ${resolved}`);
+  }catch(e){
+    vscode.window.showErrorMessage(`Reference add failed: ${e.message || e}`);
+  }
+}
 async function addReference(ctx){
   const uris = await vscode.window.showOpenDialog({canSelectFolders:true,canSelectFiles:false,canSelectMany:false,openLabel:'Add readonly reference project'});
   if(!uris?.[0]) return;
-  const root = uris[0].fsPath; const data=ensureConfig(ctx,false); let id=makeId(root); let n=2; while(data.workspaces.some(w=>w.id===id)) id=`${makeId(root)}-${n++}`;
-  data.workspaces.push({id,name:path.basename(root),root,mode:'readonly',reference:true,role:'reference'}); writeJson(configPath(ctx),data); refreshPanel(); vscode.window.showInformationMessage(`Reference added: ${root}`);
+  try{
+    const root = uris[0].fsPath;
+    const resolved = addReferenceWorkspace(ctx, root, path.basename(root), makeId(root));
+    vscode.window.showInformationMessage(`Reference added: ${resolved}`);
+  }catch(e){
+    vscode.window.showErrorMessage(`Reference add failed: ${e.message || e}`);
+  }
+}
+async function removeReference(ctx, id){
+  const data = ensureConfig(ctx,false);
+  const target = (data.workspaces || []).find(w => w.reference && w.id === id);
+  if(!target){
+    vscode.window.showWarningMessage('Reference not found.');
+    refreshPanel();
+    return;
+  }
+  data.workspaces = (data.workspaces || []).filter(w => !(w.reference && w.id === id));
+  normalizeWorkspaceRoles(data);
+  writeJson(configPath(ctx), data);
+  refreshPanel();
+  vscode.window.showInformationMessage(`Reference removed: ${target.name || target.root || id}`);
+}
+async function saveReferencesJson(ctx, value){
+  try{
+    const text = String(value || '').trim();
+    let parsed = text ? JSON.parse(text) : [];
+    if(parsed && !Array.isArray(parsed) && Array.isArray(parsed.references)) parsed = parsed.references;
+    if(!Array.isArray(parsed)) throw new Error('References JSON must be an array, or an object with a references array.');
+
+    const data = ensureConfig(ctx,false);
+    const nonReferences = (data.workspaces || []).filter(w => !w.reference);
+    const usedIds = new Set(nonReferences.map(w => w.id).filter(Boolean));
+    const existingRoots = new Set(nonReferences.map(w => w.root || '').filter(Boolean).map(pathKey));
+    const nextReferences = [];
+    const seenRoots = new Set();
+
+    for(let i=0; i<parsed.length; i++){
+      const item = parsed[i] || {};
+      if(typeof item !== 'object' || Array.isArray(item)) throw new Error(`Reference ${i + 1} must be an object.`);
+      const rawRoot = String(item.root || '').trim();
+      if(!rawRoot) throw new Error(`Reference ${i + 1} is missing root.`);
+      const root = path.resolve(path.isAbsolute(rawRoot) ? rawRoot : path.join(currentRoot() || process.cwd(), rawRoot));
+      if(!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new Error(`Reference path is not a directory: ${root}`);
+      const rootKey = pathKey(root);
+      if(existingRoots.has(rootKey)) throw new Error(`Reference path is already a writable workspace: ${root}`);
+      if(seenRoots.has(rootKey)) throw new Error(`Duplicate reference path: ${root}`);
+      seenRoots.add(rootKey);
+
+      const baseId = String(item.id || makeId(root)).replace(/[^a-zA-Z0-9_-]+/g,'-').toLowerCase() || makeId(root);
+      let id = baseId;
+      let n = 2;
+      while(usedIds.has(id)) id = `${baseId}-${n++}`;
+      usedIds.add(id);
+      const name = String(item.name || path.basename(root)).trim() || path.basename(root);
+      nextReferences.push({id,name,root,mode:'readonly',reference:true,role:'reference'});
+    }
+
+    data.workspaces = [...nonReferences, ...nextReferences];
+    normalizeWorkspaceRoles(data);
+    writeJson(configPath(ctx), data);
+    refreshPanel();
+    vscode.window.showInformationMessage(`References saved: ${nextReferences.length}`);
+  }catch(e){
+    vscode.window.showErrorMessage(`References JSON invalid: ${e.message || e}`);
+  }
 }
 async function doctor(ctx){
   const checks=[];
@@ -492,6 +687,11 @@ function panelHtml(ctx, webview){
   const data=ensureConfig(ctx,false); const root=currentRoot();
   const n = nonce();
   const mcpDisplay = lastPublicUrl ? redactUrl(mcpUrlFor(lastPublicUrl, ctx)) : 'not started';
+  const references = (data.workspaces || []).filter(w => w.reference);
+  const referenceJson = JSON.stringify(references.map(w => ({id:w.id,name:w.name,root:w.root})), null, 2);
+  const referenceList = references.length
+    ? references.map(w => `<div style="display:flex; align-items:center; gap:8px; margin:4px 0;"><button data-cmd="removeReference" data-id="${esc(w.id)}">Remove</button><code>${esc(w.name || w.id)}</code><span style="opacity:.75">${esc(w.root || '')}</span></div>`).join('')
+    : '<p style="opacity:.75">No readonly reference projects.</p>';
   return `<!doctype html><html><head>
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${n}';">
   </head><body style="font-family: var(--vscode-font-family); padding:16px;">
@@ -502,17 +702,32 @@ function panelHtml(ctx, webview){
   <button data-cmd="copyUrl">Copy URL</button>
   <button data-cmd="stop">Stop</button>
   <button data-cmd="doctor">Doctor</button></p>
-  <p><button data-cmd="addReference">Add Reference</button>
+  <p><button data-cmd="addReference">Browse Reference</button>
   <button data-cmd="starter">Copy Prompt</button>
   <button data-cmd="settings">Settings</button>
   <button data-cmd="logs">Logs</button></p>
+  <h3>References</h3>
+  <p><input id="referenceInput" style="width:min(720px, 100%);" placeholder="Folder path or https://github.com/owner/repo">
+  <button data-cmd="addReferenceInput">Add Path / GitHub</button>
+  <button data-cmd="clearReferences">Clear All</button></p>
+  ${referenceList}
+  <p><textarea id="referencesJson" rows="10" style="width:min(920px, 100%); font-family: var(--vscode-editor-font-family);">${esc(referenceJson)}</textarea></p>
+  <p><button data-cmd="saveReferencesJson">Save References JSON</button></p>
   <h3>Workspaces</h3><pre>${esc(JSON.stringify(data.workspaces.map(w=>({id:w.id,name:w.name,role:w.role,mode:w.mode,root:w.root})),null,2))}</pre>
   <p>Daily flow: open project → <b>Start</b> → paste URL into ChatGPT App → say “使用 DevMate，完成这个开发任务”。</p>
   <script nonce="${n}">
   const vscode=acquireVsCodeApi();
   document.addEventListener('click', event => {
     const button = event.target.closest('button[data-cmd]');
-    if(button) vscode.postMessage({cmd: button.dataset.cmd});
+    if(!button) return;
+    const message = {cmd: button.dataset.cmd};
+    if(message.cmd === 'addReferenceInput') message.value = document.getElementById('referenceInput')?.value || '';
+    if(message.cmd === 'saveReferencesJson') message.value = document.getElementById('referencesJson')?.value || '';
+    if(message.cmd === 'removeReference') message.id = button.dataset.id || '';
+    vscode.postMessage(message);
+  });
+  document.getElementById('referenceInput')?.addEventListener('keydown', event => {
+    if(event.key === 'Enter') vscode.postMessage({cmd:'addReferenceInput', value:event.currentTarget.value || ''});
   });
   </script></body></html>`;
 }
@@ -527,6 +742,10 @@ function openPanel(ctx){
     if(m.cmd==='stop') await stopAll();
     if(m.cmd==='doctor') await doctor(ctx);
     if(m.cmd==='addReference') await addReference(ctx);
+    if(m.cmd==='addReferenceInput') await addReferenceInput(ctx, m.value);
+    if(m.cmd==='removeReference') await removeReference(ctx, m.id);
+    if(m.cmd==='saveReferencesJson') await saveReferencesJson(ctx, m.value);
+    if(m.cmd==='clearReferences') await clearReferences(ctx);
     if(m.cmd==='starter') await copyStarterPrompt();
     if(m.cmd==='logs') output.show(true);
     if(m.cmd==='settings') await openSettings();
@@ -537,6 +756,7 @@ function openPanel(ctx){
 async function clearReferences(ctx){
   const data = ensureConfig(ctx,false);
   data.workspaces = (data.workspaces || []).filter(w => !w.reference);
+  normalizeWorkspaceRoles(data);
   writeJson(configPath(ctx), data);
   refreshPanel();
   vscode.window.showInformationMessage('Reference projects cleared.');
