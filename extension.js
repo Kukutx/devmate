@@ -7,7 +7,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
-const VERSION = '1.7.1';
+const VERSION = '1.8.0';
 const BASE_PORT = 8787;
 const MCP_PATH = '/mcp';
 let gatewayProcess = null;
@@ -40,6 +40,14 @@ function newAuthToken(){ return crypto.randomBytes(32).toString('base64').replac
 function nonce(){ return crypto.randomBytes(16).toString('base64'); }
 function authRequired(){ return cfg().get('requireAuthToken') !== false; }
 function permissionProfile(){ const v = cfg().get('permissionProfile'); return ['readOnly','balanced','fullAccess'].includes(v) ? v : 'fullAccess'; }
+function maintenanceConfig(){
+  return {
+    backupRetentionDays: Number(cfg().get('backupRetentionDays') || 30),
+    auditRetentionDays: Number(cfg().get('auditRetentionDays') || 30),
+    maxBackupBytes: Number(cfg().get('maxBackupBytes') || 268435456),
+    maxAuditBytes: Number(cfg().get('maxAuditBytes') || 5242880)
+  };
+}
 function relToRoot(fsPath){
   const root = currentRoot();
   if(!root || !fsPath) return '';
@@ -123,11 +131,12 @@ function mcpUrlFor(baseUrl, ctx){
 function defaultConfig(ctx){
   const root = currentRoot();
   return {
-    version: 5,
+    version: 6,
     appVersion: VERSION,
     instanceId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`,
     server: { port: configuredPort(), mcpPath: MCP_PATH },
     runtime: { defaultCommandTimeoutMs: Number(cfg().get('defaultCommandTimeoutMs') || 180000), maxOutputChars: Number(cfg().get('maxOutputChars') || 120000) },
+    maintenance: maintenanceConfig(),
     vscodeContext: collectVsCodeContext(),
     auth: { required: authRequired(), token: newAuthToken() },
     permissions: {
@@ -150,7 +159,7 @@ function defaultConfig(ctx){
 function ensureConfig(ctx, forceCurrent=false, portOverride=null){
   const p = configPath(ctx);
   let data = readJson(p) || defaultConfig(ctx);
-  data.version = 5;
+  data.version = 6;
   data.appVersion = VERSION;
   data.instanceId ||= `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
   data.server ||= {};
@@ -159,6 +168,7 @@ function ensureConfig(ctx, forceCurrent=false, portOverride=null){
   data.runtime ||= {};
   data.runtime.defaultCommandTimeoutMs = Number(cfg().get('defaultCommandTimeoutMs') || 180000);
   data.runtime.maxOutputChars = Number(cfg().get('maxOutputChars') || 120000);
+  data.maintenance = maintenanceConfig();
   data.vscodeContext = collectVsCodeContext();
   data.auth ||= {};
   data.auth.required = authRequired();
@@ -452,7 +462,7 @@ function panelHtml(ctx, webview){
   </head><body style="font-family: var(--vscode-font-family); padding:16px;">
   <h2>DevMate ${VERSION}</h2>
   <p><b>Active project:</b><br><code>${esc(root || 'Open a VS Code folder first')}</code></p>
-  <p><b>MCP:</b> <code>${esc(mcpDisplay)}</code><br><b>Local:</b> <code>127.0.0.1:${esc(data.server.port)}/mcp</code><br><b>Auth:</b> <code>${esc(data.auth?.required ? 'token required' : 'disabled')}</code><br><b>Permissions:</b> <code>${esc(data.permissions?.profile || 'fullAccess')}</code><br><b>Start command:</b> <code>${esc(startCommandProcess ? 'running' : (String(cfg().get('defaultStartCommand') || '').trim() || 'not configured'))}</code></p>
+  <p><b>MCP:</b> <code>${esc(mcpDisplay)}</code><br><b>Local:</b> <code>127.0.0.1:${esc(data.server.port)}/mcp</code><br><b>Auth:</b> <code>${esc(data.auth?.required ? 'token required' : 'disabled')}</code><br><b>Permissions:</b> <code>${esc(data.permissions?.profile || 'fullAccess')}</code><br><b>Retention:</b> <code>${esc(data.maintenance?.backupRetentionDays || 30)}d backups / ${esc(data.maintenance?.auditRetentionDays || 30)}d audit</code><br><b>Start command:</b> <code>${esc(startCommandProcess ? 'running' : (String(cfg().get('defaultStartCommand') || '').trim() || 'not configured'))}</code></p>
   <p><button data-cmd="quickStart">Start</button>
   <button data-cmd="copyUrl">Copy URL</button>
   <button data-cmd="stop">Stop</button>

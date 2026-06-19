@@ -23,5 +23,6 @@ Security model:
 - File tools block hidden, secret, binary, log, database, and private key paths by default.
 - Directory delete/move requires `devMate.allowDirectoryMutations`, refuses protected descendants, and rejects recursive paths whose real path leaves the workspace.
 - Audit logs are stored locally and redact common token, password, authorization, and API key patterns.
+- The gateway prunes old backups and audit entries on startup using the configured retention days and size caps.
 - `fullAccess` is the default for single-user local development; `balanced` blocks obvious destructive commands and Git operations; `readOnly` blocks mutation tools.
 - Task sessions add task IDs to audit entries and can roll back file changes using backups.

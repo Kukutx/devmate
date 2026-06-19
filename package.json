@@ -2,7 +2,7 @@
   "name": "devmate",
   "displayName": "DevMate",
   "description": "Personal open-source VS Code extension for ChatGPT MCP development: one-click local gateway, workspace editing, commands, Git workflow, and readonly reference projects.",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "icon": "assets/icon.png",
   "publisher": "local-ai",
   "engines": {
@@ -119,6 +119,34 @@
           "type": "boolean",
           "default": false,
           "description": "Allow MCP tools to delete or move directories. File edits remain available when this is false."
+        },
+        "devMate.backupRetentionDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 3650,
+          "description": "Number of days to keep automatic DevMate file backups in VS Code global storage."
+        },
+        "devMate.auditRetentionDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 3650,
+          "description": "Number of days to keep DevMate mutation and command audit entries."
+        },
+        "devMate.maxBackupBytes": {
+          "type": "number",
+          "default": 268435456,
+          "minimum": 1048576,
+          "maximum": 10737418240,
+          "description": "Maximum total bytes for automatic DevMate backups before oldest backup sets are pruned."
+        },
+        "devMate.maxAuditBytes": {
+          "type": "number",
+          "default": 5242880,
+          "minimum": 262144,
+          "maximum": 104857600,
+          "description": "Maximum audit log size in bytes before oldest entries are pruned."
         }
       }
     },
@@ -180,7 +208,8 @@
   "license": "MIT",
   "scripts": {
     "build": "esbuild gateway/server.mjs --bundle --platform=node --format=esm --target=node18 --outfile=gateway/server.bundle.mjs",
-    "check": "node --check extension.js && node --check gateway/server.mjs && node --check tests/smoke-gateway.mjs",
+    "check": "node --check extension.js && node --check gateway/server.mjs && node --check gateway/maintenance.mjs && node --check tests/smoke-gateway.mjs && node --check tests/maintenance.test.mjs",
+    "test:unit": "node --test tests/maintenance.test.mjs",
     "smoke:gateway": "npm run build && node tests/smoke-gateway.mjs",
     "package:vsix": "npm run build && vsce package"
   },

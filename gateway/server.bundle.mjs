@@ -3229,8 +3229,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path2) {
-      let input = path2;
+    function removeDotSegments(path3) {
+      let input = path3;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3482,8 +3482,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path2, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path2 && path2 !== "/" ? path2 : void 0;
+        const [path3, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path3 && path3 !== "/" ? path3 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6892,8 +6892,8 @@ var require_dist = __commonJS({
 // gateway/server.mjs
 import http from "node:http";
 import fs from "node:fs";
-import fsp from "node:fs/promises";
-import path from "node:path";
+import fsp2 from "node:fs/promises";
+import path2 from "node:path";
 import crypto3 from "node:crypto";
 import { spawn } from "node:child_process";
 
@@ -7256,8 +7256,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path2, errorMaps, issueData } = params;
-  const fullPath = [...path2, ...issueData.path || []];
+  const { data, path: path3, errorMaps, issueData } = params;
+  const fullPath = [...path3, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -7372,11 +7372,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path2, key) {
+  constructor(parent, value, path3, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path2;
+    this._path = path3;
     this._key = key;
   }
   get path() {
@@ -11296,10 +11296,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path2) {
-  if (!path2)
+function getElementAtPath(obj, path3) {
+  if (!path3)
     return obj;
-  return path2.reduce((acc, key) => acc?.[key], obj);
+  return path3.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -11708,11 +11708,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path2, issues) {
+function prefixIssues(path3, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path2);
+    iss.path.unshift(path3);
     return iss;
   });
 }
@@ -11859,16 +11859,16 @@ function flattenError(error51, mapper = (issue2) => issue2.message) {
 }
 function formatError(error51, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error52, path2 = []) => {
+  const processError = (error52, path3 = []) => {
     for (const issue2 of error52.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path2, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path3, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path3, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path3, ...issue2.path]);
       } else {
-        const fullpath = [...path2, ...issue2.path];
+        const fullpath = [...path3, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -11895,17 +11895,17 @@ function formatError(error51, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error51, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error52, path2 = []) => {
+  const processError = (error52, path3 = []) => {
     var _a3, _b;
     for (const issue2 of error52.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path2, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path3, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path3, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path3, ...issue2.path]);
       } else {
-        const fullpath = [...path2, ...issue2.path];
+        const fullpath = [...path3, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -11937,8 +11937,8 @@ function treeifyError(error51, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path2 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path2) {
+  const path3 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path3) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -25063,13 +25063,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path2 = ref.slice(1).split("/").filter(Boolean);
-  if (path2.length === 0) {
+  const path3 = ref.slice(1).split("/").filter(Boolean);
+  if (path3.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path2[0] === defsKey) {
-    const key = path2[1];
+  if (path3[0] === defsKey) {
+    const key = path3[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -32195,17 +32195,225 @@ var StreamableHTTPServerTransport = class {
   }
 };
 
+// gateway/maintenance.mjs
+import fsp from "node:fs/promises";
+import path from "node:path";
+var DAY_MS = 24 * 60 * 60 * 1e3;
+var DEFAULT_MAINTENANCE = {
+  backupRetentionDays: 30,
+  auditRetentionDays: 30,
+  maxBackupBytes: 256 * 1024 * 1024,
+  maxAuditBytes: 5 * 1024 * 1024
+};
+function clampMaintenanceNumber(value, fallback, min, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+function maintenanceOptions(input = {}) {
+  return {
+    backupRetentionDays: clampMaintenanceNumber(input.backupRetentionDays, DEFAULT_MAINTENANCE.backupRetentionDays, 1, 3650),
+    auditRetentionDays: clampMaintenanceNumber(input.auditRetentionDays, DEFAULT_MAINTENANCE.auditRetentionDays, 1, 3650),
+    maxBackupBytes: clampMaintenanceNumber(input.maxBackupBytes, DEFAULT_MAINTENANCE.maxBackupBytes, 1024 * 1024, 10 * 1024 * 1024 * 1024),
+    maxAuditBytes: clampMaintenanceNumber(input.maxAuditBytes, DEFAULT_MAINTENANCE.maxAuditBytes, 256 * 1024, 100 * 1024 * 1024)
+  };
+}
+function isInside(root, target) {
+  const rel = path.relative(root, target);
+  return rel === "" || !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+async function statOrNull(file2) {
+  try {
+    return await fsp.stat(file2);
+  } catch {
+    return null;
+  }
+}
+async function lstatOrNull(file2) {
+  try {
+    return await fsp.lstat(file2);
+  } catch {
+    return null;
+  }
+}
+async function directorySizeBytes(root) {
+  const st = await lstatOrNull(root);
+  if (!st) return 0;
+  if (!st.isDirectory()) return st.size;
+  let total = st.size;
+  let entries = [];
+  try {
+    entries = await fsp.readdir(root, { withFileTypes: true });
+  } catch {
+    return total;
+  }
+  for (const entry of entries) {
+    const child = path.join(root, entry.name);
+    if (entry.isSymbolicLink()) {
+      const linkStat = await lstatOrNull(child);
+      total += linkStat?.size || 0;
+    } else if (entry.isDirectory()) {
+      total += await directorySizeBytes(child);
+    } else {
+      const childStat = await lstatOrNull(child);
+      total += childStat?.size || 0;
+    }
+  }
+  return total;
+}
+async function safeRemoveChild(root, target) {
+  const rootPath = path.resolve(root);
+  const targetPath = path.resolve(target);
+  if (targetPath === rootPath || !isInside(rootPath, targetPath)) {
+    throw new Error(`Refusing to remove path outside maintenance root: ${target}`);
+  }
+  await fsp.rm(targetPath, { recursive: true, force: true });
+}
+async function listBackupSets(backupRoot) {
+  let entries = [];
+  try {
+    entries = await fsp.readdir(backupRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const sets = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const full = path.join(backupRoot, entry.name);
+    const st = await statOrNull(full);
+    if (!st) continue;
+    sets.push({
+      name: entry.name,
+      path: full,
+      mtimeMs: st.mtimeMs,
+      sizeBytes: await directorySizeBytes(full)
+    });
+  }
+  sets.sort((a, b) => a.mtimeMs - b.mtimeMs || a.name.localeCompare(b.name));
+  return sets;
+}
+async function countFiles(root) {
+  let count = 0;
+  async function scan(dir) {
+    let entries = [];
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await scan(full);
+      else count++;
+    }
+  }
+  await scan(root);
+  return count;
+}
+async function stateSummary(paths) {
+  const backupSets = await listBackupSets(paths.backupRoot);
+  const auditStat = await statOrNull(paths.auditLog);
+  let auditEntries = 0;
+  try {
+    const text = await fsp.readFile(paths.auditLog, "utf8");
+    auditEntries = text.split(/\r?\n/).filter(Boolean).length;
+  } catch {
+  }
+  return {
+    backupSets: backupSets.length,
+    backupFiles: await countFiles(paths.backupRoot),
+    backupBytes: backupSets.reduce((sum, item) => sum + item.sizeBytes, 0),
+    auditEntries,
+    auditBytes: auditStat?.size || 0
+  };
+}
+async function pruneBackups(backupRoot, options = {}, nowMs = Date.now()) {
+  const opts = maintenanceOptions(options);
+  await fsp.mkdir(backupRoot, { recursive: true });
+  let sets = await listBackupSets(backupRoot);
+  const beforeBytes = sets.reduce((sum, item) => sum + item.sizeBytes, 0);
+  const beforeSets = sets.length;
+  const cutoff = nowMs - opts.backupRetentionDays * DAY_MS;
+  const deleted = [];
+  for (const item of sets) {
+    if (item.mtimeMs >= cutoff) continue;
+    await safeRemoveChild(backupRoot, item.path);
+    deleted.push({ path: item.path, reason: "age", sizeBytes: item.sizeBytes });
+  }
+  sets = (await listBackupSets(backupRoot)).sort((a, b) => a.mtimeMs - b.mtimeMs || a.name.localeCompare(b.name));
+  let total = sets.reduce((sum, item) => sum + item.sizeBytes, 0);
+  for (const item of sets) {
+    if (total <= opts.maxBackupBytes) break;
+    await safeRemoveChild(backupRoot, item.path);
+    total -= item.sizeBytes;
+    deleted.push({ path: item.path, reason: "size", sizeBytes: item.sizeBytes });
+  }
+  const afterSets = await listBackupSets(backupRoot);
+  return {
+    beforeSets,
+    afterSets: afterSets.length,
+    beforeBytes,
+    afterBytes: afterSets.reduce((sum, item) => sum + item.sizeBytes, 0),
+    deleted
+  };
+}
+async function pruneAuditLog(auditLog, options = {}, nowMs = Date.now()) {
+  const opts = maintenanceOptions(options);
+  const stat = await statOrNull(auditLog);
+  if (!stat) return { beforeEntries: 0, afterEntries: 0, beforeBytes: 0, afterBytes: 0, removedEntries: 0, changed: false };
+  const original = await fsp.readFile(auditLog, "utf8");
+  const lines = original.split(/\r?\n/).filter(Boolean);
+  const cutoff = nowMs - opts.auditRetentionDays * DAY_MS;
+  let kept = lines.filter((line) => {
+    try {
+      const t = Date.parse(JSON.parse(line).time || "");
+      return !Number.isFinite(t) || t >= cutoff;
+    } catch {
+      return true;
+    }
+  });
+  while (kept.length && Buffer.byteLength(`${kept.join("\n")}
+`, "utf8") > opts.maxAuditBytes) {
+    kept.shift();
+  }
+  const next = kept.length ? `${kept.join("\n")}
+` : "";
+  const changed = next !== original;
+  if (changed) {
+    await fsp.mkdir(path.dirname(auditLog), { recursive: true });
+    const tmp = `${auditLog}.${process.pid}.tmp`;
+    await fsp.writeFile(tmp, next, "utf8");
+    await fsp.rename(tmp, auditLog);
+  }
+  return {
+    beforeEntries: lines.length,
+    afterEntries: kept.length,
+    beforeBytes: stat.size,
+    afterBytes: Buffer.byteLength(next, "utf8"),
+    removedEntries: lines.length - kept.length,
+    changed
+  };
+}
+async function pruneState(paths, options = {}, nowMs = Date.now()) {
+  await fsp.mkdir(paths.stateRoot, { recursive: true });
+  await fsp.mkdir(paths.backupRoot, { recursive: true });
+  const opts = maintenanceOptions(options);
+  const backups = await pruneBackups(paths.backupRoot, opts, nowMs);
+  const audit2 = await pruneAuditLog(paths.auditLog, opts, nowMs);
+  return { options: opts, backups, audit: audit2 };
+}
+
 // gateway/server.mjs
-var VERSION = "1.7.1";
+var VERSION = "1.8.0";
 var CONFIG_PATH = process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) {
   console.error("AIWG_CONFIG is required");
   process.exit(1);
 }
-var CONFIG_DIR = path.dirname(CONFIG_PATH);
-var STATE_ROOT = path.join(CONFIG_DIR, "state");
-var BACKUP_ROOT = path.join(STATE_ROOT, "backups");
-var AUDIT_LOG = path.join(STATE_ROOT, "audit.jsonl");
+var CONFIG_DIR = path2.dirname(CONFIG_PATH);
+var STATE_ROOT = path2.join(CONFIG_DIR, "state");
+var BACKUP_ROOT = path2.join(STATE_ROOT, "backups");
+var AUDIT_LOG = path2.join(STATE_ROOT, "audit.jsonl");
 var MAX_FILE_BYTES = 8 * 1024 * 1024;
 var DEFAULT_MAX_OUTPUT = 12e4;
 var DEFAULT_TIMEOUT_MS = 18e4;
@@ -32231,6 +32439,7 @@ function loadConfig() {
   c.runtime ||= {};
   c.runtime.defaultCommandTimeoutMs ||= DEFAULT_TIMEOUT_MS;
   c.runtime.maxOutputChars ||= DEFAULT_MAX_OUTPUT;
+  c.maintenance = maintenanceOptions(c.maintenance || DEFAULT_MAINTENANCE);
   c.workspaces ||= [];
   c.commands ||= [];
   return c;
@@ -32259,28 +32468,28 @@ function isEnvExample(base) {
   return b === ".env.example" || b === ".env.sample" || b.endsWith(".env.example") || b.endsWith(".env.sample");
 }
 function isBinaryOrSecret(rel) {
-  const base = path.basename(rel);
+  const base = path2.basename(rel);
   if (isHidden(rel)) return true;
   if (isEnvFile(base) && !isEnvExample(base)) return true;
-  const ext = path.extname(base).toLowerCase();
+  const ext = path2.extname(base).toLowerCase();
   return BLOCKED_EXT.has(ext);
 }
 function isTextAllowed(rel) {
   if (isBinaryOrSecret(rel)) return false;
-  const base = path.basename(rel);
+  const base = path2.basename(rel);
   if (ALLOW_BASENAME.has(base)) return true;
   if (base.startsWith(".env") && isEnvExample(base)) return true;
-  const ext = path.extname(base).toLowerCase();
+  const ext = path2.extname(base).toLowerCase();
   return TEXT_EXT.has(ext);
 }
-function isInside(root, target) {
-  const rel = path.relative(root, target);
-  return rel === "" || !rel.startsWith("..") && !path.isAbsolute(rel);
+function isInside2(root, target) {
+  const rel = path2.relative(root, target);
+  return rel === "" || !rel.startsWith("..") && !path2.isAbsolute(rel);
 }
 function safeResolve(root, sub = ".") {
-  const rootPath = path.resolve(root);
-  const target = path.resolve(rootPath, sub || ".");
-  if (!isInside(rootPath, target)) throw new Error(`Path escapes workspace root: ${sub}`);
+  const rootPath = path2.resolve(root);
+  const target = path2.resolve(rootPath, sub || ".");
+  if (!isInside2(rootPath, target)) throw new Error(`Path escapes workspace root: ${sub}`);
   return target;
 }
 function pathKey(p) {
@@ -32290,7 +32499,7 @@ function realPathInside(root, full) {
   try {
     const rootReal = fs.realpathSync.native(root);
     const fullReal = fs.realpathSync.native(full);
-    return isInside(rootReal, fullReal) ? fullReal : null;
+    return isInside2(rootReal, fullReal) ? fullReal : null;
   } catch {
     return null;
   }
@@ -32301,16 +32510,16 @@ function assertRealInside(root, full) {
   if (fs.existsSync(full)) {
     check2 = fs.realpathSync.native(full);
   } else {
-    let parent = path.dirname(full);
-    while (!fs.existsSync(parent) && parent !== path.dirname(parent)) parent = path.dirname(parent);
+    let parent = path2.dirname(full);
+    while (!fs.existsSync(parent) && parent !== path2.dirname(parent)) parent = path2.dirname(parent);
     const parentReal = fs.realpathSync.native(parent);
-    check2 = path.resolve(parentReal, path.relative(parent, full));
+    check2 = path2.resolve(parentReal, path2.relative(parent, full));
   }
-  if (!isInside(rootReal, check2)) throw new Error(`Path escapes workspace root through symlink/reparse point: ${normalizeSlash(path.relative(root, full))}`);
+  if (!isInside2(rootReal, check2)) throw new Error(`Path escapes workspace root through symlink/reparse point: ${normalizeSlash(path2.relative(root, full))}`);
   return full;
 }
 function isWorkspaceRootRel(rel) {
-  const n = normalizeSlash(path.normalize(rel || "."));
+  const n = normalizeSlash(path2.normalize(rel || "."));
   return n === "." || n === "";
 }
 function sha256(text) {
@@ -32328,7 +32537,7 @@ function getWs(cfg, id) {
   return w;
 }
 function wsPublic(w) {
-  return { id: w.id, name: w.name, role: w.role || (w.reference ? "reference" : "active"), mode: w.mode || (w.reference ? "readonly" : "workspace-write"), reference: !!w.reference, writable: !w.reference && (w.mode || "workspace-write") !== "readonly", root: path.basename(w.root || "") };
+  return { id: w.id, name: w.name, role: w.role || (w.reference ? "reference" : "active"), mode: w.mode || (w.reference ? "readonly" : "workspace-write"), reference: !!w.reference, writable: !w.reference && (w.mode || "workspace-write") !== "readonly", root: path2.basename(w.root || "") };
 }
 function permissionProfile(cfg) {
   return cfg.permissions?.profile || (cfg.permissions?.readOnly ? "readOnly" : "fullAccess");
@@ -32403,7 +32612,8 @@ var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
   "show_changes",
   "task_report",
   "list_backups",
-  "read_audit_log"
+  "read_audit_log",
+  "maintenance_status"
 ]);
 var DESTRUCTIVE_TOOLS = /* @__PURE__ */ new Set([
   "rollback_task",
@@ -32494,16 +32704,16 @@ function assertGitAllowed(cfg, args = [], action = "Git mutation") {
   if (dangerousGuardEnabled(cfg) && isDangerousGitArgs(args)) throw new Error(`Dangerous git operation blocked by DevMate guard: git ${args.join(" ")}`);
 }
 async function assertDirectoryMutationAllowed(cfg, w, full, rel) {
-  const st = await fsp.stat(full);
+  const st = await fsp2.stat(full);
   if (!st.isDirectory()) return st;
   if (!cfg.permissions?.allowDirectoryMutations) throw new Error("Directory mutation blocked. Enable devMate.allowDirectoryMutations to delete or move directories.");
   let count = 0;
   const visited = /* @__PURE__ */ new Set([pathKey(fs.realpathSync.native(full))]);
   async function scan(dir) {
-    const entries = await fsp.readdir(dir, { withFileTypes: true });
+    const entries = await fsp2.readdir(dir, { withFileTypes: true });
     for (const e of entries) {
-      const child = path.join(dir, e.name);
-      const childRel = normalizeSlash(path.relative(w.root, child));
+      const child = path2.join(dir, e.name);
+      const childRel = normalizeSlash(path2.relative(w.root, child));
       if (isBinaryOrSecret(childRel)) throw new Error(`Directory mutation blocked because it contains protected path: ${childRel}`);
       count++;
       if (count > MAX_DIRECTORY_MUTATION_ENTRIES) throw new Error(`Directory mutation blocked because it contains more than ${MAX_DIRECTORY_MUTATION_ENTRIES} entries.`);
@@ -32532,14 +32742,14 @@ async function audit(action, payload) {
       permissionProfile: permissionProfile(cfg),
       ...safePayload
     };
-    await fsp.appendFile(AUDIT_LOG, JSON.stringify(entry) + "\n", "utf8");
+    await fsp2.appendFile(AUDIT_LOG, JSON.stringify(entry) + "\n", "utf8");
   } catch {
   }
 }
 async function readAuditEntries(limit = 1e3) {
   let lines = [];
   try {
-    lines = (await fsp.readFile(AUDIT_LOG, "utf8")).trim().split(/\r?\n/).filter(Boolean);
+    lines = (await fsp2.readFile(AUDIT_LOG, "utf8")).trim().split(/\r?\n/).filter(Boolean);
   } catch {
   }
   return lines.slice(-limit).map((x) => {
@@ -32557,20 +32767,20 @@ function backupSafeRel(rel) {
 }
 async function backupPath(full, rel) {
   try {
-    const st = await fsp.stat(full).catch(() => null);
+    const st = await fsp2.stat(full).catch(() => null);
     if (!st) return null;
     const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
-    const dst = path.join(BACKUP_ROOT, stamp, backupSafeRel(rel));
-    await fsp.mkdir(path.dirname(dst), { recursive: true });
-    if (st.isDirectory()) await fsp.cp(full, dst, { recursive: true, force: false });
-    else await fsp.copyFile(full, dst);
+    const dst = path2.join(BACKUP_ROOT, stamp, backupSafeRel(rel));
+    await fsp2.mkdir(path2.dirname(dst), { recursive: true });
+    if (st.isDirectory()) await fsp2.cp(full, dst, { recursive: true, force: false });
+    else await fsp2.copyFile(full, dst);
     return dst;
   } catch (e) {
     return `backup_failed:${e.message}`;
   }
 }
 async function withLock(file2, fn) {
-  const key = path.resolve(file2).toLowerCase();
+  const key = path2.resolve(file2).toLowerCase();
   if (writeLocks.has(key)) throw new Error(`Path locked by another write: ${file2}`);
   writeLocks.add(key);
   try {
@@ -32588,15 +32798,15 @@ async function walk(dir, root, depth, max, out, visited = /* @__PURE__ */ new Se
   visited.add(dirKey);
   let entries = [];
   try {
-    entries = await fsp.readdir(dir, { withFileTypes: true });
+    entries = await fsp2.readdir(dir, { withFileTypes: true });
   } catch {
     return;
   }
   entries.sort((a, b) => a.name.localeCompare(b.name));
   for (const e of entries) {
     if (out.length >= max) break;
-    const full = path.join(dir, e.name);
-    const rel = normalizeSlash(path.relative(root, full));
+    const full = path2.join(dir, e.name);
+    const rel = normalizeSlash(path2.relative(root, full));
     if (isHidden(rel)) continue;
     if (e.isDirectory()) {
       const childReal = realPathInside(root, full);
@@ -32604,7 +32814,7 @@ async function walk(dir, root, depth, max, out, visited = /* @__PURE__ */ new Se
       out.push({ type: "dir", path: rel });
       if (depth > 0) await walk(full, root, depth - 1, max, out, visited);
     } else if (e.isFile() && isTextAllowed(rel)) {
-      const st = await fsp.stat(full);
+      const st = await fsp2.stat(full);
       out.push({ type: "file", path: rel, size: st.size });
     }
   }
@@ -32618,14 +32828,14 @@ async function allFiles(dir, root, out, max = 1e4, visited = /* @__PURE__ */ new
   visited.add(dirKey);
   let entries = [];
   try {
-    entries = await fsp.readdir(dir, { withFileTypes: true });
+    entries = await fsp2.readdir(dir, { withFileTypes: true });
   } catch {
     return;
   }
   for (const e of entries) {
     if (out.length >= max) break;
-    const full = path.join(dir, e.name);
-    const rel = normalizeSlash(path.relative(root, full));
+    const full = path2.join(dir, e.name);
+    const rel = normalizeSlash(path2.relative(root, full));
     if (isHidden(rel)) continue;
     if (e.isDirectory()) await allFiles(full, root, out, max, visited);
     else if (e.isFile() && isTextAllowed(rel)) out.push(full);
@@ -32676,19 +32886,19 @@ async function runGit(w, args, maxOutputChars = DEFAULT_MAX_OUTPUT, timeoutMs = 
 }
 function gitRel(w, rel) {
   const full = safeResolve(w.root, rel);
-  return normalizeSlash(path.relative(w.root, full));
+  return normalizeSlash(path2.relative(w.root, full));
 }
 function getGitPaths(w, paths) {
   if (!Array.isArray(paths) || paths.length === 0) return [];
   return paths.map((p) => gitRel(w, p));
 }
 async function readPackageScripts(w, subpath = ".") {
-  const pkgPath = assertRealInside(w.root, safeResolve(w.root, path.join(subpath || ".", "package.json")));
+  const pkgPath = assertRealInside(w.root, safeResolve(w.root, path2.join(subpath || ".", "package.json")));
   try {
-    const pkg = JSON.parse((await fsp.readFile(pkgPath, "utf8")).replace(/^\uFEFF/, ""));
-    return { path: normalizeSlash(path.relative(w.root, pkgPath)), packageManager: pkg.packageManager || null, scripts: pkg.scripts || {} };
+    const pkg = JSON.parse((await fsp2.readFile(pkgPath, "utf8")).replace(/^\uFEFF/, ""));
+    return { path: normalizeSlash(path2.relative(w.root, pkgPath)), packageManager: pkg.packageManager || null, scripts: pkg.scripts || {} };
   } catch (e) {
-    return { path: normalizeSlash(path.relative(w.root, pkgPath)), error: e.message, scripts: {} };
+    return { path: normalizeSlash(path2.relative(w.root, pkgPath)), error: e.message, scripts: {} };
   }
 }
 async function projectInstructionFiles(w, maxFiles = 80, maxChars = 5e4) {
@@ -32700,9 +32910,9 @@ async function projectInstructionFiles(w, maxFiles = 80, maxChars = 5e4) {
   let remainingChars = maxChars;
   for (const rel of ROOT_PROJECT_INSTRUCTION_FILES) {
     const full = safeResolve(w.root, rel);
-    const st = await fsp.stat(full).catch(() => null);
+    const st = await fsp2.stat(full).catch(() => null);
     if (!st?.isFile() || !isTextAllowed(rel)) continue;
-    const text = await fsp.readFile(full, "utf8").catch(() => null);
+    const text = await fsp2.readFile(full, "utf8").catch(() => null);
     if (text == null) continue;
     const t = truncate(text, remainingChars);
     loaded.push({ path: rel, length: text.length, truncated: t.truncated, text: t.text });
@@ -32719,15 +32929,15 @@ async function projectInstructionFiles(w, maxFiles = 80, maxChars = 5e4) {
     visited.add(dirKey);
     let entries = [];
     try {
-      entries = await fsp.readdir(dir, { withFileTypes: true });
+      entries = await fsp2.readdir(dir, { withFileTypes: true });
     } catch {
       return;
     }
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const e of entries) {
       if (loaded.length + available.length >= maxFiles) break;
-      const full = path.join(dir, e.name);
-      const rel = normalizeSlash(path.relative(w.root, full));
+      const full = path2.join(dir, e.name);
+      const rel = normalizeSlash(path2.relative(w.root, full));
       const lowerName = e.name.toLowerCase();
       if (e.isDirectory()) {
         if (PROJECT_INSTRUCTION_SKIP_DIRS.has(lowerName)) continue;
@@ -32735,7 +32945,7 @@ async function projectInstructionFiles(w, maxFiles = 80, maxChars = 5e4) {
         if (!childReal || visited.has(pathKey(childReal))) continue;
         await scan(full);
       } else if (e.isFile() && PROJECT_INSTRUCTION_BASENAMES.has(lowerName) && !seen.has(rel.toLowerCase()) && isTextAllowed(rel)) {
-        const st = await fsp.stat(full).catch(() => null);
+        const st = await fsp2.stat(full).catch(() => null);
         available.push({ path: rel, size: st?.size || 0 });
         seen.add(rel.toLowerCase());
       }
@@ -32787,12 +32997,12 @@ async function compactTree(w, depth = 2, maxResults = 350) {
   return items;
 }
 async function existsInWorkspace(w, rel) {
-  return !!await fsp.stat(safeResolve(w.root, rel)).catch(() => null);
+  return !!await fsp2.stat(safeResolve(w.root, rel)).catch(() => null);
 }
 async function detectPackageManager(w, dir = w.root) {
-  if (fs.existsSync(path.join(dir, "pnpm-lock.yaml"))) return "pnpm";
-  if (fs.existsSync(path.join(dir, "yarn.lock"))) return "yarn";
-  if (fs.existsSync(path.join(dir, "bun.lockb"))) return "bun";
+  if (fs.existsSync(path2.join(dir, "pnpm-lock.yaml"))) return "pnpm";
+  if (fs.existsSync(path2.join(dir, "yarn.lock"))) return "yarn";
+  if (fs.existsSync(path2.join(dir, "bun.lockb"))) return "bun";
   return "npm";
 }
 async function validationPlan(w) {
@@ -32811,7 +33021,7 @@ async function validationPlan(w) {
     checks.push({ key: "flutter:analyze", label: "flutter analyze", command: "flutter analyze", cwd: ".", kind: "flutter" });
     if (await existsInWorkspace(w, "test")) checks.push({ key: "flutter:test", label: "flutter test", command: "flutter test", cwd: ".", kind: "flutter" });
   }
-  const rootEntries = await fsp.readdir(w.root).catch(() => []);
+  const rootEntries = await fsp2.readdir(w.root).catch(() => []);
   if (rootEntries.some((x) => x.endsWith(".sln") || x.endsWith(".csproj"))) {
     checks.push({ key: "dotnet:build", label: "dotnet build", command: "dotnet build", cwd: ".", kind: "dotnet" });
     checks.push({ key: "dotnet:test", label: "dotnet test", command: "dotnet test", cwd: ".", kind: "dotnet" });
@@ -32830,23 +33040,23 @@ async function validationPlan(w) {
 function backupRelativePath(backupFull) {
   const backupRoot = fs.realpathSync.native(BACKUP_ROOT);
   const full = fs.realpathSync.native(backupFull);
-  if (!isInside(backupRoot, full)) throw new Error("Backup path is outside DevMate backup root");
-  const parts = path.relative(backupRoot, full).split(path.sep).filter(Boolean);
+  if (!isInside2(backupRoot, full)) throw new Error("Backup path is outside DevMate backup root");
+  const parts = path2.relative(backupRoot, full).split(path2.sep).filter(Boolean);
   if (parts.length < 2) throw new Error("Backup path does not include an original relative path");
   return normalizeSlash(parts.slice(1).join("/"));
 }
 async function restoreBackupToPath(cfg, w, backupFull, rel, dryRun = false) {
   if (!backupFull || String(backupFull).startsWith("backup_failed:")) return { path: rel, backupPath: backupFull, restored: false, reason: "missing backup" };
-  const src = assertRealInside(BACKUP_ROOT, path.resolve(backupFull));
-  const st = await fsp.stat(src).catch(() => null);
+  const src = assertRealInside(BACKUP_ROOT, path2.resolve(backupFull));
+  const st = await fsp2.stat(src).catch(() => null);
   if (!st) return { path: rel, backupPath: backupFull, restored: false, reason: "backup not found" };
   const dst = assertWritable(cfg, w, rel);
   if (dryRun) return { path: rel, backupPath: src, restored: false, dryRun: true };
   const currentBackup = fs.existsSync(dst) ? await backupPath(dst, rel) : null;
-  await fsp.mkdir(path.dirname(dst), { recursive: true });
-  if (fs.existsSync(dst)) await fsp.rm(dst, { recursive: true, force: true });
-  if (st.isDirectory()) await fsp.cp(src, dst, { recursive: true, force: false });
-  else await fsp.copyFile(src, dst);
+  await fsp2.mkdir(path2.dirname(dst), { recursive: true });
+  if (fs.existsSync(dst)) await fsp2.rm(dst, { recursive: true, force: true });
+  if (st.isDirectory()) await fsp2.cp(src, dst, { recursive: true, force: false });
+  else await fsp2.copyFile(src, dst);
   return { path: rel, backupPath: src, currentBackup, restored: true };
 }
 async function removePathForRollback(cfg, w, rel, dryRun = false) {
@@ -32854,7 +33064,7 @@ async function removePathForRollback(cfg, w, rel, dryRun = false) {
   if (dryRun) return { path: rel, removed: false, dryRun: true };
   if (!fs.existsSync(full)) return { path: rel, removed: false, reason: "target already absent" };
   const currentBackup = await backupPath(full, rel);
-  await fsp.rm(full, { recursive: true, force: true });
+  await fsp2.rm(full, { recursive: true, force: true });
   return { path: rel, currentBackup, removed: true };
 }
 async function rollbackEntry(cfg, entry, dryRun = false) {
@@ -32897,6 +33107,10 @@ function createServer() {
     let git = null;
     if (aw) git = await runGit(aw, ["--version"], 2e3, 5e3);
     return toolText({ version: VERSION, configLoaded: true, workspaceCount: cfg.workspaces.length, activeWorkspace: aw ? wsPublic(aw) : null, git });
+  });
+  server.registerTool("maintenance_status", { title: "Maintenance status", description: "Show backup/audit retention settings and current local state size.", inputSchema: {} }, async () => {
+    const cfg = loadConfig();
+    return toolText({ retention: cfg.maintenance, storage: await stateSummary({ backupRoot: BACKUP_ROOT, auditLog: AUDIT_LOG }) });
   });
   server.registerTool("start_task", { title: "Start task session", description: "Start a task session so subsequent writes, commands, and Git mutations share a rollback/report taskId.", inputSchema: { title: external_exports.string().optional() } }, async ({ title = "" }) => {
     const cfg = loadConfig();
@@ -33003,10 +33217,10 @@ function createServer() {
     const cfg = loadConfig();
     const w = getWs(cfg, workspaceId);
     const full = assertReadable(w, rel);
-    const st = await fsp.stat(full);
+    const st = await fsp2.stat(full);
     if (!st.isFile()) throw new Error("Not a file");
     if (st.size > MAX_FILE_BYTES) throw new Error(`File too large: ${st.size} bytes`);
-    let text = await fsp.readFile(full, "utf8");
+    let text = await fsp2.readFile(full, "utf8");
     const fullSha = sha256(text);
     if (startLine || endLine) {
       const lines = text.split(/\r?\n/);
@@ -33039,7 +33253,7 @@ function createServer() {
         if (!line) continue;
         const m = line.match(/^(.*?):(\d+):(.*)$/);
         if (!m) continue;
-        const rel = normalizeSlash(path.relative(w.root, path.resolve(root, m[1])));
+        const rel = normalizeSlash(path2.relative(w.root, path2.resolve(root, m[1])));
         if (isTextAllowed(rel)) results.push({ file: rel, line: Number(m[2]), preview: m[3].trim().slice(0, 300) });
         if (results.length >= maxResults) break;
       }
@@ -33050,15 +33264,15 @@ function createServer() {
     const q = query.toLowerCase();
     for (const f of files) {
       if (results.length >= maxResults) break;
-      const st = await fsp.stat(f).catch(() => null);
+      const st = await fsp2.stat(f).catch(() => null);
       if (!st || st.size > 1024 * 1024) continue;
-      const text = await fsp.readFile(f, "utf8").catch(() => null);
+      const text = await fsp2.readFile(f, "utf8").catch(() => null);
       if (text == null) continue;
       const lines = text.split(/\r?\n/);
       for (let i = 0; i < lines.length; i++) {
         const ok = regex ? fallbackRegex.test(lines[i]) : lines[i].toLowerCase().includes(q);
         if (ok) {
-          results.push({ file: normalizeSlash(path.relative(w.root, f)), line: i + 1, preview: lines[i].trim().slice(0, 300) });
+          results.push({ file: normalizeSlash(path2.relative(w.root, f)), line: i + 1, preview: lines[i].trim().slice(0, 300) });
           if (results.length >= maxResults) break;
         }
       }
@@ -33070,12 +33284,12 @@ function createServer() {
     const w = getWs(cfg, workspaceId);
     const full = assertWritable(cfg, w, rel);
     return withLock(full, async () => {
-      if (createDirs) await fsp.mkdir(path.dirname(full), { recursive: true });
+      if (createDirs) await fsp2.mkdir(path2.dirname(full), { recursive: true });
       const backup = await backupPath(full, rel);
-      const before = await fsp.readFile(full, "utf8").catch(() => null);
-      await fsp.writeFile(full, append ? (before || "") + content : content, "utf8");
+      const before = await fsp2.readFile(full, "utf8").catch(() => null);
+      await fsp2.writeFile(full, append ? (before || "") + content : content, "utf8");
       await audit("write_file", { workspace: w.id, path: rel, append, backup });
-      const next = await fsp.readFile(full, "utf8");
+      const next = await fsp2.readFile(full, "utf8");
       return toolText({ workspace: wsPublic(w), path: rel, backup, sha256: sha256(next), written: true });
     });
   });
@@ -33084,11 +33298,11 @@ function createServer() {
     const w = getWs(cfg, workspaceId);
     const full = assertWritable(cfg, w, rel);
     return withLock(full, async () => {
-      if (createDirs) await fsp.mkdir(path.dirname(full), { recursive: true });
+      if (createDirs) await fsp2.mkdir(path2.dirname(full), { recursive: true });
       const exists = fs.existsSync(full);
       if (exists && !overwrite) throw new Error("File exists; pass overwrite=true or use write_file/apply_patch");
       const backup = exists ? await backupPath(full, rel) : null;
-      await fsp.writeFile(full, content, "utf8");
+      await fsp2.writeFile(full, content, "utf8");
       await audit("create_file", { workspace: w.id, path: rel, overwrite, backup });
       return toolText({ workspace: wsPublic(w), path: rel, backup, sha256: sha256(content), created: !exists, overwritten: exists });
     });
@@ -33100,14 +33314,14 @@ function createServer() {
     const w = getWs(cfg, workspaceId);
     const full = assertWritable(cfg, w, rel);
     return withLock(full, async () => {
-      const text = await fsp.readFile(full, "utf8");
+      const text = await fsp2.readFile(full, "utf8");
       const beforeSha = sha256(text);
       if (expectedSha256 && expectedSha256 !== beforeSha) throw new Error(`sha256 mismatch: expected ${expectedSha256}, actual ${beforeSha}`);
       if (!text.includes(oldText)) throw new Error("oldText not found");
       if (!allOccurrences && text.indexOf(oldText) !== text.lastIndexOf(oldText)) throw new Error("oldText appears multiple times; set allOccurrences=true or provide more specific oldText");
       const backup = await backupPath(full, rel);
       const next = allOccurrences ? text.split(oldText).join(newText) : text.replace(oldText, newText);
-      await fsp.writeFile(full, next, "utf8");
+      await fsp2.writeFile(full, next, "utf8");
       await audit("apply_patch", { workspace: w.id, path: rel, backup });
       return toolText({ workspace: wsPublic(w), path: rel, backup, oldSha256: beforeSha, newSha256: sha256(next), changed: true });
     });
@@ -33120,7 +33334,7 @@ function createServer() {
       const st = await assertDirectoryMutationAllowed(cfg, w, full, rel);
       if (st.isDirectory() && !recursive) throw new Error("Target is directory; pass recursive=true");
       const backup = await backupPath(full, rel);
-      await fsp.rm(full, { recursive: st.isDirectory(), force: false });
+      await fsp2.rm(full, { recursive: st.isDirectory(), force: false });
       await audit("delete_file", { workspace: w.id, path: rel, recursive, backup });
       return toolText({ workspace: wsPublic(w), path: rel, backup, deleted: true });
     });
@@ -33133,11 +33347,11 @@ function createServer() {
     return withLock(src, async () => withLock(dst, async () => {
       const sourceStat = await assertDirectoryMutationAllowed(cfg, w, src, from);
       if (fs.existsSync(dst) && !overwrite) throw new Error("Destination exists; pass overwrite=true");
-      await fsp.mkdir(path.dirname(dst), { recursive: true });
+      await fsp2.mkdir(path2.dirname(dst), { recursive: true });
       const sourceBackup = await backupPath(src, from);
       const destBackup = fs.existsSync(dst) ? await backupPath(dst, to) : null;
-      if (fs.existsSync(dst)) await fsp.rm(dst, { recursive: true, force: true });
-      await fsp.rename(src, dst);
+      if (fs.existsSync(dst)) await fsp2.rm(dst, { recursive: true, force: true });
+      await fsp2.rename(src, dst);
       await audit("move_file", { workspace: w.id, from, to, overwrite, sourceIsDirectory: sourceStat.isDirectory(), sourceBackup, destBackup });
       return toolText({ workspace: wsPublic(w), from, to, sourceBackup, destBackup, moved: true });
     }));
@@ -33175,9 +33389,9 @@ function createServer() {
     if (!scripts.scripts || !Object.prototype.hasOwnProperty.call(scripts.scripts, script)) throw new Error(`Script not found in ${scripts.path}: ${script}`);
     let pm = packageManager;
     if (pm === "auto") {
-      if (fs.existsSync(path.join(dir, "pnpm-lock.yaml"))) pm = "pnpm";
-      else if (fs.existsSync(path.join(dir, "yarn.lock"))) pm = "yarn";
-      else if (fs.existsSync(path.join(dir, "bun.lockb"))) pm = "bun";
+      if (fs.existsSync(path2.join(dir, "pnpm-lock.yaml"))) pm = "pnpm";
+      else if (fs.existsSync(path2.join(dir, "yarn.lock"))) pm = "yarn";
+      else if (fs.existsSync(path2.join(dir, "bun.lockb"))) pm = "bun";
       else pm = "npm";
     }
     const command = pm === "npm" ? `npm run ${script}` : `${pm} ${script}`;
@@ -33390,34 +33604,23 @@ function createServer() {
   server.registerTool("task_report", { title: "Task report", description: "Summarize current Git status, unstaged/staged diffs, and recent audit entries after a task.", inputSchema: { workspaceId: external_exports.string().optional(), diffChars: external_exports.number().int().min(1e3).max(3e5).optional(), auditLimit: external_exports.number().int().min(1).max(200).optional() } }, async ({ workspaceId, diffChars = 8e4, auditLimit = 50 }) => {
     const cfg = loadConfig();
     const w = getWs(cfg, workspaceId);
-    const [status, diff, staged, stagedFiles] = await Promise.all([runGit(w, ["status", "--short", "--branch"]), runGit(w, ["diff"], diffChars), runGit(w, ["diff", "--staged"], diffChars), runGit(w, ["diff", "--staged", "--name-status"], 2e4)]);
-    let auditLines = [];
-    try {
-      auditLines = (await fsp.readFile(AUDIT_LOG, "utf8")).trim().split(/\r?\n/).filter(Boolean).slice(-auditLimit).map((x) => {
-        try {
-          return JSON.parse(x);
-        } catch {
-          return { raw: x };
-        }
-      });
-    } catch {
-    }
-    return toolText({ workspace: wsPublic(w), status, diff, staged, stagedFiles, recentAudit: auditLines });
+    const [status, diff, staged, stagedFiles, recentAudit] = await Promise.all([runGit(w, ["status", "--short", "--branch"]), runGit(w, ["diff"], diffChars), runGit(w, ["diff", "--staged"], diffChars), runGit(w, ["diff", "--staged", "--name-status"], 2e4), readAuditEntries(auditLimit)]);
+    return toolText({ workspace: wsPublic(w), status, diff, staged, stagedFiles, recentAudit });
   });
   server.registerTool("list_backups", { title: "List backups", description: "List recent automatic backups.", inputSchema: { limit: external_exports.number().int().min(1).max(500).optional() } }, async ({ limit = 80 }) => {
     const items = [];
     async function scan(dir) {
       let entries = [];
       try {
-        entries = await fsp.readdir(dir, { withFileTypes: true });
+        entries = await fsp2.readdir(dir, { withFileTypes: true });
       } catch {
         return;
       }
       for (const e of entries) {
-        const full = path.join(dir, e.name);
+        const full = path2.join(dir, e.name);
         if (e.isDirectory()) await scan(full);
         else {
-          const st = await fsp.stat(full);
+          const st = await fsp2.stat(full);
           items.push({ path: full, time: st.mtime.toISOString(), size: st.size });
         }
       }
@@ -33429,17 +33632,17 @@ function createServer() {
   server.registerTool("restore_backup", { title: "Restore backup", description: "Restore a single file from a DevMate automatic backup. Current target is backed up first.", inputSchema: { workspaceId: external_exports.string().optional(), backupPath: external_exports.string(), targetPath: external_exports.string().optional(), overwrite: external_exports.boolean().optional() } }, async ({ workspaceId, backupPath: bp, targetPath, overwrite = true }) => {
     const cfg = loadConfig();
     const w = getWs(cfg, workspaceId);
-    const backupFull = assertRealInside(BACKUP_ROOT, path.resolve(bp));
-    const st = await fsp.stat(backupFull);
+    const backupFull = assertRealInside(BACKUP_ROOT, path2.resolve(bp));
+    const st = await fsp2.stat(backupFull);
     if (!st.isFile()) throw new Error("Only single-file backup restore is supported");
     const rel = targetPath || backupRelativePath(backupFull);
     const dst = assertWritable(cfg, w, rel);
     return withLock(dst, async () => {
       if (fs.existsSync(dst) && !overwrite) throw new Error("Target exists; pass overwrite=true to restore over it");
-      await fsp.mkdir(path.dirname(dst), { recursive: true });
+      await fsp2.mkdir(path2.dirname(dst), { recursive: true });
       const currentBackup = fs.existsSync(dst) ? await backupPath(dst, rel) : null;
-      await fsp.copyFile(backupFull, dst);
-      const text = await fsp.readFile(dst, "utf8").catch(() => null);
+      await fsp2.copyFile(backupFull, dst);
+      const text = await fsp2.readFile(dst, "utf8").catch(() => null);
       await audit("restore_backup", { workspace: w.id, backupPath: backupFull, targetPath: rel, currentBackup });
       return toolText({ workspace: wsPublic(w), backupPath: backupFull, targetPath: rel, currentBackup, sha256: text == null ? null : sha256(text), restored: true });
     });
@@ -33450,6 +33653,15 @@ function createServer() {
   return server;
 }
 var config2 = loadConfig();
+try {
+  const maintenance = await pruneState({ stateRoot: STATE_ROOT, backupRoot: BACKUP_ROOT, auditLog: AUDIT_LOG }, config2.maintenance);
+  const deletedBackups = maintenance.backups.deleted.length;
+  if (deletedBackups || maintenance.audit.removedEntries) {
+    console.log(`Maintenance pruned backups=${deletedBackups} auditEntries=${maintenance.audit.removedEntries}`);
+  }
+} catch (e) {
+  console.error(`Maintenance failed: ${e.message || e}`);
+}
 var httpServer = http.createServer(async (req, res) => {
   let url2;
   try {

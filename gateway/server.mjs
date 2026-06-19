@@ -8,8 +8,9 @@ import { spawn } from 'node:child_process';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
+import { DEFAULT_MAINTENANCE, maintenanceOptions, pruneState, stateSummary } from './maintenance.mjs';
 
-const VERSION = '1.7.1';
+const VERSION = '1.8.0';
 const CONFIG_PATH = process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) { console.error('AIWG_CONFIG is required'); process.exit(1); }
 const CONFIG_DIR = path.dirname(CONFIG_PATH);
@@ -32,7 +33,7 @@ const ROOT_PROJECT_INSTRUCTION_FILES = ['AGENTS.md','CLAUDE.md'];
 const PROJECT_INSTRUCTION_SKIP_DIRS = new Set([...HIDDEN_DIRS, '.github', '.vscode', '.idea', 'tmp']);
 
 function readJson(p){ return JSON.parse(fs.readFileSync(p,'utf8').replace(/^\uFEFF/,'')); }
-function loadConfig(){ const c=readJson(CONFIG_PATH); c.server ||= {}; c.instanceId ||= 'missing-instance'; c.server.port ||= 8787; c.server.mcpPath = '/mcp'; c.runtime ||= {}; c.runtime.defaultCommandTimeoutMs ||= DEFAULT_TIMEOUT_MS; c.runtime.maxOutputChars ||= DEFAULT_MAX_OUTPUT; c.workspaces ||= []; c.commands ||= []; return c; }
+function loadConfig(){ const c=readJson(CONFIG_PATH); c.server ||= {}; c.instanceId ||= 'missing-instance'; c.server.port ||= 8787; c.server.mcpPath = '/mcp'; c.runtime ||= {}; c.runtime.defaultCommandTimeoutMs ||= DEFAULT_TIMEOUT_MS; c.runtime.maxOutputChars ||= DEFAULT_MAX_OUTPUT; c.maintenance = maintenanceOptions(c.maintenance || DEFAULT_MAINTENANCE); c.workspaces ||= []; c.commands ||= []; return c; }
 function saveConfig(c){ fs.writeFileSync(CONFIG_PATH, JSON.stringify(c,null,2)+'\n','utf8'); }
 function now(){ return new Date().toISOString(); }
 function relParts(p){ return String(p||'').split(/[\\/]+/).filter(Boolean); }
@@ -98,7 +99,7 @@ const TOOL_OUTPUT_SCHEMA = z.object({}).passthrough();
 const READ_ONLY_TOOLS = new Set([
   'gateway_status','gateway_self_test','task_status','list_workspaces','vscode_context','active_editor_context','list_diagnostics',
   'workspace_map','project_snapshot','project_instructions','list_project_scripts','list_configured_commands','detect_validation','list_files','read_file',
-  'search_text','git_status','git_diff','git_staged_files','git_log','git_blame','show_changes','task_report','list_backups','read_audit_log'
+  'search_text','git_status','git_diff','git_staged_files','git_log','git_blame','show_changes','task_report','list_backups','read_audit_log','maintenance_status'
 ]);
 const DESTRUCTIVE_TOOLS = new Set([
   'rollback_task','write_file','create_file','apply_patch','delete_file','move_file','restore_backup',
@@ -483,6 +484,7 @@ function createServer(){
   const S = (shape)=>shape;
   server.registerTool('gateway_status',{title:'Gateway status',description:'Show gateway runtime and active workspace.',inputSchema:{}},async()=>{ const cfg=loadConfig(); const aw=activeWorkspace(cfg); return toolText({name:'devmate',version:VERSION,mcpPath:'/mcp',permissionProfile:permissionProfile(cfg),blockDangerousOperations:dangerousGuardEnabled(cfg),task:cfg.task || null,activeWorkspace:aw?wsPublic(aw):null,workspaces:cfg.workspaces.map(wsPublic),startedAt:now()}); });
   server.registerTool('gateway_self_test',{title:'Gateway self test',description:'Run basic local checks.',inputSchema:{}},async()=>{ const cfg=loadConfig(); const aw=activeWorkspace(cfg); let git=null; if(aw) git=await runGit(aw,['--version'],2000,5000); return toolText({version:VERSION,configLoaded:true,workspaceCount:cfg.workspaces.length,activeWorkspace:aw?wsPublic(aw):null,git}); });
+  server.registerTool('maintenance_status',{title:'Maintenance status',description:'Show backup/audit retention settings and current local state size.',inputSchema:{}},async()=>{ const cfg=loadConfig(); return toolText({retention:cfg.maintenance,storage:await stateSummary({backupRoot:BACKUP_ROOT,auditLog:AUDIT_LOG})}); });
   server.registerTool('start_task',{title:'Start task session',description:'Start a task session so subsequent writes, commands, and Git mutations share a rollback/report taskId.',inputSchema:{title:z.string().optional()}},async({title=''})=>{ const cfg=loadConfig(); cfg.task={currentTaskId:newTaskId(),title,startedAt:now()}; saveConfig(cfg); await audit('start_task',{taskId:cfg.task.currentTaskId,title}); return toolText({task:cfg.task}); });
   server.registerTool('finish_task',{title:'Finish task session',description:'Finish the current task session and keep audit history available.',inputSchema:{}},async()=>{ const cfg=loadConfig(); const task=cfg.task || null; if(cfg.task) cfg.task.finishedAt=now(); const finished=cfg.task || null; delete cfg.task; saveConfig(cfg); if(finished) await audit('finish_task',{taskId:finished.currentTaskId,title:finished.title,startedAt:finished.startedAt,finishedAt:finished.finishedAt}); return toolText({finished:finished || task}); });
   server.registerTool('task_status',{title:'Task status',description:'Show current task session and recent audit entries for it.',inputSchema:{taskId:z.string().optional(),limit:z.number().int().min(1).max(500).optional()}},async({taskId,limit=100})=>{ const cfg=loadConfig(); const id=taskId || cfg.task?.currentTaskId || null; const entries=(await readAuditEntries(5000)).filter(e=>!id || e.taskId===id).slice(-limit); return toolText({currentTask:cfg.task || null,taskId:id,entries}); });
@@ -534,7 +536,7 @@ function createServer(){
 
   server.registerTool('show_changes',{title:'Show changes',description:'Summarize current Git changes with status, diff stat, file totals, and a bounded patch for review.',inputSchema:{workspaceId:z.string().optional(),staged:z.boolean().optional(),maxOutputChars:z.number().int().min(1000).max(300000).optional()}},async({workspaceId,staged=false,maxOutputChars=80000})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); return toolText(await gitChangeReview(w,staged,maxOutputChars)); });
 
-  server.registerTool('task_report',{title:'Task report',description:'Summarize current Git status, unstaged/staged diffs, and recent audit entries after a task.',inputSchema:{workspaceId:z.string().optional(),diffChars:z.number().int().min(1000).max(300000).optional(),auditLimit:z.number().int().min(1).max(200).optional()}},async({workspaceId,diffChars=80000,auditLimit=50})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const [status,diff,staged,stagedFiles] = await Promise.all([runGit(w,['status','--short','--branch']),runGit(w,['diff'],diffChars),runGit(w,['diff','--staged'],diffChars),runGit(w,['diff','--staged','--name-status'],20000)]); let auditLines=[]; try{ auditLines=(await fsp.readFile(AUDIT_LOG,'utf8')).trim().split(/\r?\n/).filter(Boolean).slice(-auditLimit).map(x=>{try{return JSON.parse(x)}catch{return {raw:x}}}); }catch{} return toolText({workspace:wsPublic(w),status,diff,staged,stagedFiles,recentAudit:auditLines}); });
+  server.registerTool('task_report',{title:'Task report',description:'Summarize current Git status, unstaged/staged diffs, and recent audit entries after a task.',inputSchema:{workspaceId:z.string().optional(),diffChars:z.number().int().min(1000).max(300000).optional(),auditLimit:z.number().int().min(1).max(200).optional()}},async({workspaceId,diffChars=80000,auditLimit=50})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const [status,diff,staged,stagedFiles,recentAudit] = await Promise.all([runGit(w,['status','--short','--branch']),runGit(w,['diff'],diffChars),runGit(w,['diff','--staged'],diffChars),runGit(w,['diff','--staged','--name-status'],20000),readAuditEntries(auditLimit)]); return toolText({workspace:wsPublic(w),status,diff,staged,stagedFiles,recentAudit}); });
 
   server.registerTool('list_backups',{title:'List backups',description:'List recent automatic backups.',inputSchema:{limit:z.number().int().min(1).max(500).optional()}},async({limit=80})=>{ const items=[]; async function scan(dir){ let entries=[]; try{entries=await fsp.readdir(dir,{withFileTypes:true});}catch{return;} for(const e of entries){ const full=path.join(dir,e.name); if(e.isDirectory()) await scan(full); else { const st=await fsp.stat(full); items.push({path:full,time:st.mtime.toISOString(),size:st.size}); } } } await scan(BACKUP_ROOT); items.sort((a,b)=>b.time.localeCompare(a.time)); return toolText({backups:items.slice(0,limit)}); });
   server.registerTool('restore_backup',{title:'Restore backup',description:'Restore a single file from a DevMate automatic backup. Current target is backed up first.',inputSchema:{workspaceId:z.string().optional(),backupPath:z.string(),targetPath:z.string().optional(),overwrite:z.boolean().optional()}},async({workspaceId,backupPath:bp,targetPath,overwrite=true})=>{ const cfg=loadConfig(); const w=getWs(cfg,workspaceId); const backupFull=assertRealInside(BACKUP_ROOT,path.resolve(bp)); const st=await fsp.stat(backupFull); if(!st.isFile()) throw new Error('Only single-file backup restore is supported'); const rel=targetPath || backupRelativePath(backupFull); const dst=assertWritable(cfg,w,rel); return withLock(dst,async()=>{ if(fs.existsSync(dst) && !overwrite) throw new Error('Target exists; pass overwrite=true to restore over it'); await fsp.mkdir(path.dirname(dst),{recursive:true}); const currentBackup=fs.existsSync(dst)?await backupPath(dst,rel):null; await fsp.copyFile(backupFull,dst); const text=await fsp.readFile(dst,'utf8').catch(()=>null); await audit('restore_backup',{workspace:w.id,backupPath:backupFull,targetPath:rel,currentBackup}); return toolText({workspace:wsPublic(w),backupPath:backupFull,targetPath:rel,currentBackup,sha256:text==null?null:sha256(text),restored:true}); }); });
@@ -543,6 +545,15 @@ function createServer(){
 }
 
 const config = loadConfig();
+try {
+  const maintenance = await pruneState({stateRoot:STATE_ROOT,backupRoot:BACKUP_ROOT,auditLog:AUDIT_LOG}, config.maintenance);
+  const deletedBackups = maintenance.backups.deleted.length;
+  if (deletedBackups || maintenance.audit.removedEntries) {
+    console.log(`Maintenance pruned backups=${deletedBackups} auditEntries=${maintenance.audit.removedEntries}`);
+  }
+} catch (e) {
+  console.error(`Maintenance failed: ${e.message || e}`);
+}
 const httpServer = http.createServer(async (req,res)=>{
   let url;
   try { url = new URL(req.url || '/', 'http://localhost'); }

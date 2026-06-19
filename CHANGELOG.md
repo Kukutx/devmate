@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.0
+
+- Added automatic backup and audit log retention for long-running local development use.
+- Added `maintenance_status` to report local backup/audit storage size and retention settings.
+- Added unit coverage for maintenance pruning and wired it into CI.
+- Added CI dependency audit and VSIX artifact upload.
+- Redacted recent audit entries returned by `task_report`.
+
 ## 1.7.1
 
 - Hardened MCP request URL parsing so malformed Host headers cannot affect route parsing.

@@ -18,6 +18,7 @@ Core abilities:
 - Add readonly reference projects.
 - Review current changes with bounded Git summaries.
 - Keep automatic backups and audit logs in VS Code global storage, not in your project.
+- Automatically prune old backups and audit logs so long-running local use stays bounded.
 
 Safety defaults:
 
@@ -28,6 +29,7 @@ Safety defaults:
 - Use `readOnly` for inspection-only sessions or `balanced` when you want destructive shell/Git guards.
 - Directory delete/move operations are blocked unless `devMate.allowDirectoryMutations` is enabled.
 - Set `devMate.confirmBeforePush` to block MCP push requests until you deliberately disable it.
+- Backups and audit logs default to 30-day retention with size caps; tune `devMate.backupRetentionDays`, `devMate.auditRetentionDays`, `devMate.maxBackupBytes`, and `devMate.maxAuditBytes` if needed.
 
 Runtime requirement: `ngrok` must be installed and authenticated so ChatGPT can reach your local MCP endpoint over HTTPS.
 
@@ -36,6 +38,7 @@ Development checks:
 ```powershell
 npm install
 npm run check
+npm run test:unit
 npm run smoke:gateway
 npm run package:vsix
 ```

@@ -24,11 +24,23 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+
       - name: Check syntax
         run: npm run check
+
+      - name: Unit tests
+        run: npm run test:unit
 
       - name: Smoke test gateway
         run: npm run smoke:gateway
 
       - name: Package VSIX
         run: npm run package:vsix
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: devmate-vsix
+          path: "*.vsix"

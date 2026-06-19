@@ -16,6 +16,7 @@ DevMate is a local development gateway. It can read, edit, run commands, and use
 - Directory delete/move is blocked unless `devMate.allowDirectoryMutations` is enabled.
 - Git push can be blocked with `devMate.confirmBeforePush`.
 - Audit entries redact common token, password, authorization, and API key patterns before they are written or returned.
+- Local backups and audit logs are pruned by retention days and size caps to reduce long-term data accumulation.
 
 ## Reporting Issues
 

@@ -11,11 +11,12 @@ const bundledGateway = path.join(root, 'gateway', 'server.bundle.mjs');
 const gatewayScript = process.env.DEVMATE_GATEWAY_SCRIPT || (fs.existsSync(bundledGateway) ? 'gateway/server.bundle.mjs' : 'gateway/server.mjs');
 
 const config = {
-  version: 5,
-  appVersion: '1.7.1',
+  version: 6,
+  appVersion: '1.8.0',
   instanceId: `smoke-${Date.now()}`,
   server: { port, mcpPath: '/mcp' },
   runtime: { defaultCommandTimeoutMs: 30000, maxOutputChars: 80000 },
+  maintenance: { backupRetentionDays: 30, auditRetentionDays: 30, maxBackupBytes: 268435456, maxAuditBytes: 5242880 },
   auth: { required: true, token },
   permissions: { profile: 'fullAccess', readOnly: false, blockDangerousOperations: false, confirmBeforePush: false, allowDirectoryMutations: true },
   vscodeContext: {
@@ -121,7 +122,7 @@ try {
   const init = await rpc('initialize', {
     protocolVersion: '2025-03-26',
     capabilities: {},
-    clientInfo: { name: 'devmate-smoke', version: '1.7.1' }
+    clientInfo: { name: 'devmate-smoke', version: '1.8.0' }
   });
   assert(init.response.ok && init.json?.result?.serverInfo?.name === 'devmate', `initialize failed: ${init.text}`);
 
@@ -136,9 +137,13 @@ try {
   assert(toolByName.get('run_command')?.annotations?.openWorldHint === true, 'run_command is missing openWorldHint');
   assert(toolByName.get('project_instructions')?.annotations?.readOnlyHint === true, 'project_instructions is missing readOnlyHint');
   assert(toolByName.get('show_changes')?.annotations?.readOnlyHint === true, 'show_changes is missing readOnlyHint');
+  assert(toolByName.get('maintenance_status')?.annotations?.readOnlyHint === true, 'maintenance_status is missing readOnlyHint');
 
   const status = await rpc('tools/call', { name: 'gateway_status', arguments: {} });
   assert(status.response.ok && status.text.includes('fullAccess'), `gateway_status did not report fullAccess: ${status.text}`);
+
+  const maintenance = await rpc('tools/call', { name: 'maintenance_status', arguments: {} });
+  assert(maintenance.response.ok && maintenance.text.includes('auditRetentionDays'), `maintenance_status failed: ${maintenance.text}`);
 
   const vscodeContext = await rpc('tools/call', { name: 'vscode_context', arguments: {} });
   assert(vscodeContext.response.ok && vscodeContext.text.includes('README.md'), `vscode_context failed: ${vscodeContext.text}`);
