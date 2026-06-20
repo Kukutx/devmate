@@ -32404,7 +32404,7 @@ async function pruneState(paths, options = {}, nowMs = Date.now()) {
 }
 
 // gateway/server.mjs
-var VERSION = "1.11.0";
+var VERSION = "1.12.0";
 var CONFIG_PATH = process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) {
   console.error("AIWG_CONFIG is required");

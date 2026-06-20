@@ -44,6 +44,8 @@ Switching models or reasoning modes can leave the current chat without the conne
 4. If tools are available but the panel reports stale preflight, run `DevMate: Copy URL` or `DevMate: Start` in VS Code.
 5. If the ngrok host changed, recreate or update the ChatGPT connector with the newly copied full token URL.
 
+If the model surface you want to use cannot call MCP tools, use `Copy Context` in the DevMate panel and paste that bundle into the chat. Treat it as planning context only; reconnect DevMate before asking ChatGPT to edit files, run commands, or use Git.
+
 ## Wrong Workspace
 
 DevMate uses the active VS Code folder as the writable workspace by default. Open the intended folder in VS Code, then run `DevMate: Start` again. Use `list_workspaces` or `gateway_status` from ChatGPT to verify the active workspace.

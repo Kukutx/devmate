@@ -7,7 +7,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
-const VERSION = '1.11.0';
+const VERSION = '1.12.0';
 const BASE_PORT = 8787;
 const MCP_PATH = '/mcp';
 let gatewayProcess = null;
@@ -243,6 +243,87 @@ function scheduleContextRefresh(ctx){
   }, 400);
 }
 function setStatus(text){ if(statusBar){ statusBar.text = text; statusBar.show(); } }
+function shortText(text, max=12000){
+  text = String(text ?? '');
+  return text.length > max ? `${text.slice(0,max)}\n...[truncated ${text.length - max} chars]` : text;
+}
+function gitSync(root, args, max=12000){
+  if(!root) return '';
+  const r = spawnSync('git', args, {cwd:root, encoding:'utf8', windowsHide:true});
+  if(r.error || r.status !== 0) return shortText((r.stderr || r.stdout || r.error?.message || '').trim(), max);
+  return shortText((r.stdout || '').trim(), max);
+}
+function packageScripts(root){
+  const pkg = readJson(path.join(root,'package.json'));
+  if(!pkg?.scripts) return [];
+  return Object.entries(pkg.scripts).slice(0,80).map(([name, command]) => `${name}: ${command}`);
+}
+function safeRootFiles(root, depth=3, max=260){
+  const out = [];
+  const skip = new Set(['.git','node_modules','.next','.dart_tool','dist','build','coverage','.cache','tmp','.vscode','.idea']);
+  function walk(dir, level){
+    if(out.length >= max || level > depth) return;
+    let entries = [];
+    try{ entries = fs.readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)); }catch{ return; }
+    for(const e of entries){
+      if(out.length >= max) break;
+      const full = path.join(dir,e.name);
+      const rel = path.relative(root, full).replace(/\\/g,'/');
+      if(!rel || isProtectedName(full) || skip.has(e.name)) continue;
+      out.push(`${e.isDirectory() ? 'd' : 'f'} ${rel}`);
+      if(e.isDirectory()) walk(full, level + 1);
+    }
+  }
+  walk(root, 1);
+  return out;
+}
+function readInstructionFile(root, name){
+  const full = path.join(root, name);
+  if(!fs.existsSync(full) || isProtectedName(full)) return '';
+  try{
+    const st = fs.statSync(full);
+    if(!st.isFile() || st.size > 200000) return '';
+    return shortText(fs.readFileSync(full,'utf8'), 30000);
+  }catch{ return ''; }
+}
+function contextBundle(ctx){
+  const root = currentRoot();
+  if(!root) throw new Error('Open a VS Code project folder first.');
+  const data = ensureConfig(ctx,false);
+  const vscodeContext = collectVsCodeContext();
+  const activeEditor = vscodeContext.activeEditor ? {...vscodeContext.activeEditor} : null;
+  if(activeEditor && (String(activeEditor.path || '').includes('://') || path.isAbsolute(String(activeEditor.path || '')))){
+    activeEditor.selectedText = '';
+  } else if(activeEditor?.selectedText) {
+    activeEditor.selectedText = shortText(activeEditor.selectedText, 4000);
+  }
+  const refs = (data.workspaces || []).filter(w => w.reference).map(w => `${w.name || w.id}: ${w.root}`);
+  const diagnostics = (vscodeContext.diagnostics || []).slice(0,80).map(d => `${d.severity} ${d.path}:${d.range?.start?.line || 1} ${d.message}`);
+  const instructions = ['AGENTS.md','CLAUDE.md'].map(name => ({name, text:readInstructionFile(root,name)})).filter(x => x.text);
+  const sections = [
+    `# DevMate Context Bundle`,
+    `Generated: ${new Date().toISOString()}`,
+    `Purpose: paste this into a ChatGPT model/session that cannot call the DevMate MCP tools. Use it for planning, review, and guidance. If live file edits are needed, reconnect DevMate and use MCP tools.`,
+    `## Workspace\nRoot: ${root}\nDevMate: ${VERSION}\nPermission profile: ${data.permissions?.profile || 'fullAccess'}\nReferences:\n${refs.length ? refs.map(x=>`- ${x}`).join('\n') : '- none'}`,
+    `## Git Status\n\`\`\`text\n${gitSync(root,['status','--short','--branch'],12000) || '(no git status)'}\n\`\`\``,
+    `## Git Diff Stat\n\`\`\`text\n${gitSync(root,['diff','--stat'],12000) || '(no diff stat)'}\n\`\`\``,
+    `## Package Scripts\n\`\`\`text\n${packageScripts(root).join('\n') || '(no package scripts found)'}\n\`\`\``,
+    `## File Tree\n\`\`\`text\n${safeRootFiles(root).join('\n') || '(no files listed)'}\n\`\`\``,
+    `## VS Code Context\n\`\`\`json\n${JSON.stringify({activeEditor, visibleEditors:vscodeContext.visibleEditors, diagnostics}, null, 2)}\n\`\`\``,
+    ...instructions.map(x => `## ${x.name}\n\`\`\`markdown\n${x.text}\n\`\`\``),
+    `## Suggested Instruction\nAct as my development planning assistant from this context. Keep recommendations concrete and scoped. If you need live file reads, edits, commands, tests, or Git operations, tell me to reconnect DevMate and use MCP tools.`
+  ];
+  return sections.join('\n\n');
+}
+async function copyContextBundle(ctx){
+  try{
+    const text = contextBundle(ctx);
+    await vscode.env.clipboard.writeText(text);
+    vscode.window.showInformationMessage(`DevMate context copied (${text.length} chars). Paste it into ChatGPT when MCP tools are unavailable.`);
+  }catch(e){
+    vscode.window.showErrorMessage(`Context copy failed: ${e.message || e}`);
+  }
+}
 
 function httpRequestRaw(url, options={}, body=null, timeoutMs=4000){
   return new Promise(resolve=>{
@@ -764,6 +845,7 @@ function panelHtml(ctx, webview){
     <button class="secondary" data-cmd="stop">Stop</button>
     <button class="secondary" data-cmd="doctor">Doctor</button>
     <button class="secondary" data-cmd="starter">Copy Prompt</button>
+    <button class="secondary" data-cmd="copyContext">Copy Context</button>
     <button class="secondary" data-cmd="settings">Settings</button>
     <button class="secondary" data-cmd="logs">Logs</button>
   </div>
@@ -826,6 +908,7 @@ function openPanel(ctx){
     if(m.cmd==='saveReferencesJson') await saveReferencesJson(ctx, m.value);
     if(m.cmd==='clearReferences') await clearReferences(ctx);
     if(m.cmd==='starter') await copyStarterPrompt();
+    if(m.cmd==='copyContext') await copyContextBundle(ctx);
     if(m.cmd==='logs') output.show(true);
     if(m.cmd==='settings') await openSettings();
   });
@@ -878,6 +961,7 @@ function activate(context){
   register(context,'devMate.exportSource',()=>exportSource(context));
   register(context,'devMate.setup',()=>setup(context));
   register(context,'devMate.copyPrompt',()=>copyStarterPrompt());
+  register(context,'devMate.copyContextBundle',()=>copyContextBundle(context));
   register(context,'devMate.openSettings',()=>openSettings());
 
   // Hidden compatibility aliases for older local builds.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.0
+
+- Added `Copy Context` for ChatGPT model surfaces that cannot call MCP tools.
+- Included project instructions, Git status, diff stat, package scripts, a bounded file tree, VS Code context, and reference summaries in the copied bundle.
+- Kept context bundle output token-free and blocked from hidden, secret, binary, and heavy generated paths.
+
 ## 1.11.0
 
 - Simplified the DevMate reference workflow with a clearer panel layout.
