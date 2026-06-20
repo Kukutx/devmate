@@ -11,8 +11,8 @@ const bundledGateway = path.join(root, 'gateway', 'server.bundle.mjs');
 const gatewayScript = process.env.DEVMATE_GATEWAY_SCRIPT || (fs.existsSync(bundledGateway) ? 'gateway/server.bundle.mjs' : 'gateway/server.mjs');
 
 const config = {
-  version: 8,
-  appVersion: '1.13.0',
+  version: 9,
+  appVersion: '1.14.0',
   instanceId: `smoke-${Date.now()}`,
   server: { port, mcpPath: '/mcp' },
   runtime: { defaultCommandTimeoutMs: 30000, maxOutputChars: 80000 },
@@ -123,7 +123,7 @@ try {
   const init = await rpc('initialize', {
     protocolVersion: '2025-03-26',
     capabilities: {},
-    clientInfo: { name: 'devmate-smoke', version: '1.13.0' }
+    clientInfo: { name: 'devmate-smoke', version: '1.14.0' }
   });
   assert(init.response.ok && init.json?.result?.serverInfo?.name === 'devmate', `initialize failed: ${init.text}`);
 

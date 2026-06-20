@@ -7,7 +7,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
-const VERSION = '1.13.0';
+const VERSION = '1.14.0';
 const BASE_PORT = 8787;
 const MCP_PATH = '/mcp';
 let gatewayProcess = null;
@@ -61,6 +61,17 @@ function normalizeWorkspaceRoles(data){
       w.reference = false;
     }
   }
+}
+function syncCurrentWorkspace(data, root){
+  const references = (data.workspaces || []).filter(w => w.reference && !samePath(w.root, root));
+  const existing = (data.workspaces || []).find(w => !w.reference && samePath(w.root, root));
+  let id = existing?.id || makeId(root);
+  if(references.some(w => w.id === id)) id = uniqueWorkspaceId(references, makeId(root));
+  data.activeWorkspaceId = id;
+  data.workspaces = [
+    { id, name:path.basename(root), root, mode:'workspace-write', reference:false, role:'active' },
+    ...references
+  ];
 }
 function newAuthToken(){ return crypto.randomBytes(32).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 function nonce(){ return crypto.randomBytes(16).toString('base64'); }
@@ -172,7 +183,7 @@ function mcpUrlFor(baseUrl, ctx){
 function defaultConfig(ctx){
   const root = currentRoot();
   return {
-    version: 8,
+    version: 9,
     appVersion: VERSION,
     instanceId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`,
     server: { port: configuredPort(), mcpPath: MCP_PATH },
@@ -201,7 +212,7 @@ function defaultConfig(ctx){
 function ensureConfig(ctx, forceCurrent=false, portOverride=null){
   const p = configPath(ctx);
   let data = readJson(p) || defaultConfig(ctx);
-  data.version = 8;
+  data.version = 9;
   data.appVersion = VERSION;
   data.instanceId ||= `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
   data.server ||= {};
@@ -226,13 +237,7 @@ function ensureConfig(ctx, forceCurrent=false, portOverride=null){
   data.commands ||= [];
   const root = currentRoot();
   if(root && (forceCurrent || cfg().get('autoUseCurrentWorkspace'))){
-    const existing = data.workspaces.find(w => samePath(w.root, root));
-    if(existing){
-      existing.root = root; existing.name = path.basename(root); existing.mode = 'workspace-write'; existing.reference = false; existing.role = 'active'; data.activeWorkspaceId = existing.id;
-    } else {
-      const id = uniqueWorkspaceId(data.workspaces, makeId(root));
-      data.workspaces.unshift({id, name:path.basename(root), root, mode:'workspace-write', reference:false, role:'active'}); data.activeWorkspaceId = id;
-    }
+    syncCurrentWorkspace(data, root);
   }
   normalizeWorkspaceRoles(data);
   writeJson(p,data);
@@ -801,6 +806,11 @@ function panelHtml(ctx, webview){
   const n = nonce();
   const mcpDisplay = lastPublicUrl ? redactUrl(mcpUrlFor(lastPublicUrl, ctx)) : 'not started';
   const references = (data.workspaces || []).filter(w => w.reference);
+  const activeWorkspace = (data.workspaces || []).find(w => w.id === data.activeWorkspaceId) || (data.workspaces || []).find(w => !w.reference);
+  const workspaceState = {
+    active: activeWorkspace ? {id:activeWorkspace.id,name:activeWorkspace.name,root:activeWorkspace.root,mode:activeWorkspace.mode} : null,
+    references: references.length
+  };
   const referenceJson = JSON.stringify(references.map(w => ({id:w.id,name:w.name,root:w.root})), null, 2);
   const referenceList = references.length
     ? references.map(w => `<div class="ref-row"><div class="ref-main"><strong>${esc(w.name || w.id)}</strong><code>${esc(w.root || '')}</code></div><button class="secondary danger" data-cmd="removeReference" data-id="${esc(w.id)}">Remove</button></div>`).join('')
@@ -875,8 +885,9 @@ function panelHtml(ctx, webview){
     </details>
   </div>
   <details>
-    <summary>Workspace JSON</summary>
-    <pre>${esc(JSON.stringify(data.workspaces.map(w=>({id:w.id,name:w.name,role:w.role,mode:w.mode,root:w.root})),null,2))}</pre>
+    <summary>Workspace state</summary>
+    <p class="muted">DevMate keeps one writable active workspace. Add other projects as readonly references.</p>
+    <pre>${esc(JSON.stringify(workspaceState,null,2))}</pre>
   </details>
   <p class="flow muted">Daily flow: open project -> <b>Start</b> -> paste URL into ChatGPT App -> say “使用 DevMate，完成这个开发任务”。</p>
   <script nonce="${n}">

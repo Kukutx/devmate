@@ -10,7 +10,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import { DEFAULT_MAINTENANCE, maintenanceOptions, pruneState, stateSummary } from './maintenance.mjs';
 
-const VERSION = '1.13.0';
+const VERSION = '1.14.0';
 const CONFIG_PATH = process.env.DEVMATE_CONFIG || process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) { console.error('DEVMATE_CONFIG is required'); process.exit(1); }
 const CONFIG_DIR = path.dirname(CONFIG_PATH);

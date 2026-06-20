@@ -32404,7 +32404,7 @@ async function pruneState(paths, options = {}, nowMs = Date.now()) {
 }
 
 // gateway/server.mjs
-var VERSION = "1.13.0";
+var VERSION = "1.14.0";
 var CONFIG_PATH = process.env.DEVMATE_CONFIG || process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) {
   console.error("DEVMATE_CONFIG is required");

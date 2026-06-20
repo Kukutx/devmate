@@ -48,7 +48,9 @@ If the model surface you want to use cannot call MCP tools, use `Copy Context` i
 
 ## Wrong Workspace
 
-DevMate uses the active VS Code folder as the writable workspace by default. Open the intended folder in VS Code, then run `DevMate: Start` again. Use `list_workspaces` or `gateway_status` from ChatGPT to verify the active workspace.
+DevMate uses the active VS Code folder as the only writable workspace by default. Open the intended folder in VS Code, then run `DevMate: Start` again. Use `list_workspaces` or `gateway_status` from ChatGPT to verify the active workspace.
+
+Older DevMate builds kept previously opened writable workspaces in `config.json`. Current builds automatically collapse that state to the active VS Code folder plus explicit readonly references. Use References for other projects you want ChatGPT to inspect.
 
 ## Reference Project Management
 

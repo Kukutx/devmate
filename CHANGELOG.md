@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.14.0
+
+- Stopped historical writable workspaces from accumulating when switching VS Code projects.
+- Migrated the workspace model to keep one active writable workspace plus explicit readonly references.
+- Replaced raw Workspace JSON in the panel with a smaller workspace state summary.
+
 ## 1.13.0
 
 - Updated repository metadata to the canonical `Kukutx/DevMate` GitHub path.

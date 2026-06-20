@@ -38,6 +38,7 @@ Manual acceptance:
 24. In a multi-root VS Code workspace, use `Open Folders` and confirm non-active folders become readonly references.
 25. Edit the Advanced References JSON textarea, save it, and confirm invalid JSON or a missing folder shows an error instead of changing workspaces.
 26. Optional network check: paste a public GitHub repository URL and confirm DevMate clones or updates it under VS Code global storage as a readonly reference.
-27. Use `Copy Context` and confirm the clipboard contains a redacted DevMate context bundle with project instructions, Git summary, scripts, file tree, VS Code context, and no MCP token.
+27. Switch between two VS Code folders and reopen the DevMate panel; confirm Workspace state shows only the current active writable workspace and any explicit readonly references.
+28. Use `Copy Context` and confirm the clipboard contains a redacted DevMate context bundle with project instructions, Git summary, scripts, file tree, VS Code context, and no MCP token.
 
 Known external dependency: ngrok must be installed and authenticated.
