@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.13.0
+
+- Updated repository metadata to the canonical `Kukutx/DevMate` GitHub path.
+- Switched the gateway launch contract to `DEVMATE_CONFIG`, with `AIWG_CONFIG` retained as a compatibility fallback.
+- Removed hidden legacy command aliases from older local builds to keep the command surface smaller.
+- Prevented selected text from editors outside the active workspace from being captured in the VS Code context snapshot.
+- Tightened public MCP preflight so copied URLs must initialize against the DevMate server.
+
 ## 1.12.0
 
 - Added `Copy Context` for ChatGPT model surfaces that cannot call MCP tools.

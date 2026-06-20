@@ -32404,10 +32404,10 @@ async function pruneState(paths, options = {}, nowMs = Date.now()) {
 }
 
 // gateway/server.mjs
-var VERSION = "1.12.0";
-var CONFIG_PATH = process.env.AIWG_CONFIG;
+var VERSION = "1.13.0";
+var CONFIG_PATH = process.env.DEVMATE_CONFIG || process.env.AIWG_CONFIG;
 if (!CONFIG_PATH) {
-  console.error("AIWG_CONFIG is required");
+  console.error("DEVMATE_CONFIG is required");
   process.exit(1);
 }
 var CONFIG_DIR = path2.dirname(CONFIG_PATH);

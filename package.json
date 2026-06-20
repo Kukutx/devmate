@@ -2,7 +2,7 @@
   "name": "devmate",
   "displayName": "DevMate",
   "description": "Personal open-source VS Code extension for ChatGPT MCP development: one-click local gateway, workspace editing, commands, Git workflow, and readonly reference projects.",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "icon": "assets/icon.png",
   "publisher": "local-ai",
   "engines": {
@@ -27,18 +27,7 @@
     "onCommand:devMate.setup",
     "onCommand:devMate.copyPrompt",
     "onCommand:devMate.copyContextBundle",
-    "onCommand:devMate.openSettings",
-    "onCommand:devMate.quickStart",
-    "onCommand:devMate.oneClick",
-    "onCommand:devMate.openPanel",
-    "onCommand:devMate.openControlCenter",
-    "onCommand:devMate.copyMcpUrl",
-    "onCommand:devMate.copyStarterPrompt",
-    "onCommand:devMate.addReferenceWorkspace",
-    "onCommand:devMate.showLogs",
-    "onCommand:aiWorkspaceGateway.quickStart",
-    "onCommand:aiWorkspaceGateway.openPanel",
-    "onCommand:localAiGateway.quickStart"
+    "onCommand:devMate.openSettings"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -229,12 +218,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Kukutx/devmate.git"
+    "url": "https://github.com/Kukutx/DevMate.git"
   },
   "bugs": {
-    "url": "https://github.com/Kukutx/devmate/issues"
+    "url": "https://github.com/Kukutx/DevMate/issues"
   },
-  "homepage": "https://github.com/Kukutx/devmate#readme",
+  "homepage": "https://github.com/Kukutx/DevMate#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^4.4.3"

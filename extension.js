@@ -7,7 +7,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
-const VERSION = '1.12.0';
+const VERSION = '1.13.0';
 const BASE_PORT = 8787;
 const MCP_PATH = '/mcp';
 let gatewayProcess = null;
@@ -97,14 +97,18 @@ function rangePublic(range){
 function collectVsCodeContext(){
   const root = currentRoot();
   const editor = vscode.window.activeTextEditor;
-  const active = editor ? {
-    path: relToRoot(editor.document.uri.fsPath) || editor.document.uri.toString(),
-    languageId: editor.document.languageId,
-    lineCount: editor.document.lineCount,
-    isDirty: editor.document.isDirty,
-    selection: rangePublic(editor.selection),
-    selectedText: (!isProtectedName(editor.document.uri.fsPath) && !editor.selection.isEmpty) ? editor.document.getText(editor.selection).slice(0,20000) : ''
-  } : null;
+  let active = null;
+  if(editor){
+    const rel = relToRoot(editor.document.uri.fsPath);
+    active = {
+      path: rel || editor.document.uri.toString(),
+      languageId: editor.document.languageId,
+      lineCount: editor.document.lineCount,
+      isDirty: editor.document.isDirty,
+      selection: rangePublic(editor.selection),
+      selectedText: (rel && !isProtectedName(editor.document.uri.fsPath) && !editor.selection.isEmpty) ? editor.document.getText(editor.selection).slice(0,20000) : ''
+    };
+  }
   const visibleEditors = vscode.window.visibleTextEditors.map(e=>({
     path: relToRoot(e.document.uri.fsPath) || e.document.uri.toString(),
     languageId: e.document.languageId,
@@ -416,7 +420,7 @@ async function startGateway(ctx){
   const p = await choosePort(ctx);
   ensureConfig(ctx,true,p);
   if(gatewayProcess){ try{ gatewayProcess.kill(); }catch{} gatewayProcess=null; }
-  gatewayProcess = spawnNode(gatewayPath(ctx), { AIWG_CONFIG: configPath(ctx), DEVMATE_PUBLIC_HEALTH_DETAILS: cfg().get('publicHealthDetails') ? '1' : '0' });
+  gatewayProcess = spawnNode(gatewayPath(ctx), { DEVMATE_CONFIG: configPath(ctx), DEVMATE_PUBLIC_HEALTH_DETAILS: cfg().get('publicHealthDetails') ? '1' : '0' });
   for(let i=0;i<40;i++){
     await new Promise(r=>setTimeout(r,250));
     const r = await healthAt(p);
@@ -485,8 +489,9 @@ async function startNgrok(ctx){
 async function mcpHandshakeTest(baseUrl, ctx=globalContext){
   const mcp = mcpUrlFor(baseUrl, ctx);
   const init = await postJson(mcp, { jsonrpc:'2.0', id:1, method:'initialize', params:{ protocolVersion:'2025-03-26', capabilities:{}, clientInfo:{name:'devmate-preflight', version:VERSION} } }, 8000);
-  if(!init.ok || !init.json?.result?.serverInfo?.name){
-    throw new Error(`MCP initialize failed via ${redactUrl(mcp)}. HTTP=${init.status||'none'} error=${init.error||''} body=${String(init.body||'').slice(0,300)}`);
+  const serverName = init.json?.result?.serverInfo?.name;
+  if(!init.ok || serverName !== 'devmate'){
+    throw new Error(`MCP initialize failed via ${redactUrl(mcp)}. Expected DevMate server, got ${serverName || 'none'}. HTTP=${init.status||'none'} error=${init.error||''} body=${String(init.body||'').slice(0,300)}`);
   }
   const tools = await postJson(mcp, { jsonrpc:'2.0', id:2, method:'tools/list', params:{} }, 8000);
   if(!tools.ok || !Array.isArray(tools.json?.result?.tools)){
@@ -964,18 +969,6 @@ function activate(context){
   register(context,'devMate.copyContextBundle',()=>copyContextBundle(context));
   register(context,'devMate.openSettings',()=>openSettings());
 
-  // Hidden compatibility aliases for older local builds.
-  register(context,'devMate.quickStart',()=>quickStart(context));
-  register(context,'devMate.oneClick',()=>quickStart(context));
-  register(context,'devMate.openPanel',()=>openPanel(context));
-  register(context,'devMate.openControlCenter',()=>openPanel(context));
-  register(context,'devMate.copyMcpUrl',()=>copyUrl());
-  register(context,'devMate.copyStarterPrompt',()=>copyStarterPrompt());
-  register(context,'devMate.addReferenceWorkspace',()=>addReference(context));
-  register(context,'devMate.showLogs',()=>output.show(true));
-  register(context,'aiWorkspaceGateway.quickStart',()=>quickStart(context));
-  register(context,'aiWorkspaceGateway.openPanel',()=>openPanel(context));
-  register(context,'localAiGateway.quickStart',()=>quickStart(context));
   log(`Activated DevMate ${VERSION}`);
 }
 function deactivate(){ if(contextWriteTimer) clearTimeout(contextWriteTimer); contextWriteTimer=null; return stopAll(); }

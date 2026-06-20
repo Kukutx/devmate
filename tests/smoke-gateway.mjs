@@ -12,7 +12,7 @@ const gatewayScript = process.env.DEVMATE_GATEWAY_SCRIPT || (fs.existsSync(bundl
 
 const config = {
   version: 8,
-  appVersion: '1.12.0',
+  appVersion: '1.13.0',
   instanceId: `smoke-${Date.now()}`,
   server: { port, mcpPath: '/mcp' },
   runtime: { defaultCommandTimeoutMs: 30000, maxOutputChars: 80000 },
@@ -40,7 +40,7 @@ fs.writeFileSync(configPath, `\uFEFF${JSON.stringify(config, null, 2)}`, 'utf8')
 
 const child = spawn(process.execPath, [gatewayScript], {
   cwd: root,
-  env: { ...process.env, AIWG_CONFIG: configPath },
+  env: { ...process.env, DEVMATE_CONFIG: configPath },
   windowsHide: true,
   stdio: ['ignore', 'pipe', 'pipe']
 });
@@ -123,7 +123,7 @@ try {
   const init = await rpc('initialize', {
     protocolVersion: '2025-03-26',
     capabilities: {},
-    clientInfo: { name: 'devmate-smoke', version: '1.12.0' }
+    clientInfo: { name: 'devmate-smoke', version: '1.13.0' }
   });
   assert(init.response.ok && init.json?.result?.serverInfo?.name === 'devmate', `initialize failed: ${init.text}`);
 
